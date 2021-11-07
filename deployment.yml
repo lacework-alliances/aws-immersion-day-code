@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name:  demo-app
+spec:
+  selector:
+    matchLabels:
+      app:  demo-app
+  template:
+    metadata:
+      labels:
+        app:  demo-app
+    spec:
+      containers:
+        - name:  demo-app
+          image: imageName # IMPORTANT: Update!
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 443
+              name: https
+            - containerPort: 80
+              name: http
+      imagePullSecrets:
+        - name: regcred
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app:  demo-app
+  name:  demo-app
+spec:
+  type: LoadBalancer
+  ports:
+    - name: https
+      port: 443
+      protocol: TCP
+    - name: http
+      port: 80
+      protocol: TCP
+  selector:
+    app:  demo-app
