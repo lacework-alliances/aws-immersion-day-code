@@ -1,0 +1,3 @@
+crhelper
+requests
+kubernetes
