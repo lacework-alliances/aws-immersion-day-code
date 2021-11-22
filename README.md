@@ -1,5 +1,7 @@
 # Demo App
 
+[![CIS](https://app.soluble.cloud/api/v1/public/badges/025cc02c-25bf-4011-8a8e-416ac05a700a.svg)](https://app.soluble.cloud/repos/details/github.com/jefferyfry/lacework-aws-immersion-day-app-pipeline)  [![IaC](https://app.soluble.cloud/api/v1/public/badges/79ea6b5e-8acb-487a-9a14-59e059aef0e1.svg)](https://app.soluble.cloud/repos/details/github.com/jefferyfry/lacework-aws-immersion-day-app-pipeline)  
+
 This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 10.1.7.
 
 ![demo-app](https://drive.google.com/uc?export=view&id=1GBfyMHdmEh1QgJmmPSOEzMvz5d6921Cq)
