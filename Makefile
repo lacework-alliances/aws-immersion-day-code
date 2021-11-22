@@ -3,6 +3,7 @@ BUCKET_PREFIX := lacework-alliances
 KEY_PREFIX := awsimmersionday
 LAMBDA_PREFIX := lambda/
 APP_PREFIX := app/
+APP_DIR := app
 MANIFEST_DIR := manifests
 MANIFEST_PREFIX := manifests
 CFT_PREFIX := templates
@@ -47,7 +48,8 @@ _upload_manifests:
 _upload_app_zip:
 	$(info [+] Uploading app to $(BUCKET_NAME) bucket)
 	(cd app && zip -r app.zip . -x "*.DS_Store*" "*.git*" "build*" "Makefile" "requirements.txt" "node_modules/*")
-	@aws --profile $(PROFILE) --region $(REGION) s3 cp $(APP_PREFIX)app.zip s3://$(BUCKET_NAME)/$(KEY_PREFIX)/$(APP_PREFIX) --acl public-read
+	@aws --profile $(PROFILE) --region $(REGION) s3 cp app/app.zip s3://$(BUCKET_NAME)/$(KEY_PREFIX)/$(APP_PREFIX) --acl public-read
+	rm -f app/app.zip
 
 _upload_lambda_zip: $(ZIP_LAMBDA_SUBDIRS)
 

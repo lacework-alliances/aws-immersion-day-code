@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: "Set up AWS DevSecOps Pipeline with CodePipeline, CodeBuild, ECR & EKS."
+Description: "Set up AWS DevSecOps Pipeline with CodePipeline, CodeBuild, ECR & EKS and secure with Lacework."
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
