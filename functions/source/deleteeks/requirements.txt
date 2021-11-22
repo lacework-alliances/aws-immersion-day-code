@@ -1,3 +1,2 @@
 crhelper
 requests
-kubernetes

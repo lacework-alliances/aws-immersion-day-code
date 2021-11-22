@@ -1,0 +1,861 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Set up AWS DevSecOps Pipeline with CodePipeline, CodeBuild, ECR & EKS."
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Basic Configuration"
+        Parameters:
+          - LaceworkAccountName
+          - LaceworkAccessKeyID
+          - LaceworkSecretKey
+      - Label:
+          default: "Advanced Configuration"
+        Parameters:
+          - S3BucketName
+          - S3KeyPrefix
+    ParameterLabels:
+      LaceworkAccountName:
+        default: Lacework Account Name
+      LaceworkAccessKeyID:
+        default: Lacework Access Key ID
+      LaceworkSecretKey:
+        default: Lacework Secret Key
+      S3BucketName:
+        default: Cloudformation S3 Bucket
+      S3KeyPrefix:
+        default: Cloudformation S3 Key Prefix
+
+Parameters:
+  LaceworkAccountName:
+    Type: String
+    Description: Your Lacework account name. ie. <account name>.lacework.net
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$'
+    ConstraintDescription: Invalid Lacework account name. Account name may contain alphanumeric characters and dashes only.
+  LaceworkAccessKeyID:
+    Type: String
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9_]*$'
+    ConstraintDescription: Lacework API Access Key ID contains alphanumeric characters and symbols only.
+    Description: Lacework API Secret Key ID. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
+  LaceworkSecretKey:
+    Type: String
+    NoEcho: true
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9_]*$'
+    ConstraintDescription: Lacework API Secret Key contains alphanumeric characters and symbols only.
+    Description: Lacework API Secret Key. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
+  KeyName:
+    Description: The EC2 Key Pair to allow SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+
+  # advanced
+  S3BucketName:
+    Type: String
+    Default: lacework-alliances
+    MinLength: '1'
+    Description: "S3 bucket for assets. Use this if you want to customize your deployment. The bucket name can include numbers, lowercase letters, uppercase letters, and hyphens, but it cannot start or end with hyphens (-)."
+  S3KeyPrefix:
+    Type: String
+    Default: awsimmersionday
+    MinLength: '1'
+    Description: "S3 key prefix for assets directory. Use this if you want to customize your deployment. The prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slashes (/). For more information, see https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html."
+
+Resources:
+  ####### Pipeline
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: "app-repository"
+
+  LaceworkCrossAccountECRRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Join
+        - '-'
+        - - !Ref LaceworkAccountName
+          - laceworkcwsrole-sa
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action: 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              AWS: !Join
+                - ''
+                - - 'arn:aws:iam::'
+                  - '434813966438'
+                  - ':root'
+            Condition:
+              StringEquals:
+                'sts:ExternalId': !Ref AWS::StackId
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
+
+  PermissionForEventsToInvokePipeline:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: EventsRolePolicy
+      Roles:
+        - !Ref CodePipelineEventsRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Resource: "*"
+            Effect: Allow
+            Action:
+              - codepipeline:*
+
+  CodePipelineEventsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+
+  CodePipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: AWS-CodePipeline-Service-3
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codecommit:CancelUploadArchive
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:UploadArchive
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - codedeploy:CreateDeployment
+                  - codedeploy:GetApplicationRevision
+                  - codedeploy:GetDeployment
+                  - codedeploy:GetDeploymentConfig
+                  - codedeploy:RegisterApplicationRevision
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StartBuild
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource: '*'
+
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ECRRepository}
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource: "*"
+
+  CodeBuildBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: "codebuild-scan-push.yaml"
+      Environment:
+        ComputeType: "BUILD_GENERAL1_SMALL"
+        Image: "aws/codebuild/docker:1.12.1"
+        Type: "LINUX_CONTAINER"
+        EnvironmentVariables:
+          - Name: AWS_REGION
+            Value: !Ref AWS::Region
+          - Name: IMAGE_NAME
+            Value: demo-app
+          - Name: DOCKER_REG
+            Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
+      Name: !Sub ${AWS::AccountId}-codebuild-build
+      ServiceRole: !Ref CodeBuildServiceRole
+
+  CodeBuildDeployProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: "codebuild-deploy-eks.yaml"
+      Environment:
+        ComputeType: "BUILD_GENERAL1_SMALL"
+        Image: "aws/codebuild/docker:1.12.1"
+        Type: "LINUX_CONTAINER"
+        EnvironmentVariables:
+          - Name: AWS_REGION
+            Value: !Ref AWS::Region
+          - Name: DOCKER_REG
+            Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
+          - Name: EKS_CLUSTER
+            Value: !Sub "${AWS::AccountId}-eks"
+          - Name: IMAGE_NAME
+            Value: demo-app
+          - Name: IMAGE_TAG
+            Value: latest
+      Name: !Sub ${AWS::AccountId}-codebuild-deploy
+      ServiceRole: !Ref CodeBuildServiceRole
+
+  EKSPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: App
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: S3
+              Configuration:
+                S3Bucket: !Ref S3BucketName
+                S3ObjectKey: !Sub "${S3KeyPrefix}/app/app.zip"
+                PollForSourceChanges: false
+              OutputArtifacts:
+                - Name: App
+              RunOrder: 1
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref CodeBuildBuildProject
+              InputArtifacts:
+                - Name: App
+              OutputArtifacts:
+                - Name: BuildOutput
+              RunOrder: 1
+        - Name: Deploy
+          Actions:
+            - Name: UpdateDeployment
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref CodeBuildDeployProject
+              InputArtifacts:
+                - Name: App
+              OutputArtifacts:
+                - Name: DeployOutput
+              RunOrder: 1
+
+####### VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: "192.168.0.0/16"
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::AccountId}-eks-vpc"
+    DependsOn:
+      - ElasticIPNatGateway
+
+  InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+
+  VPCGatewayAttachment:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Public Subnets
+        - Key: Network
+          Value: Public
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+    DependsOn:
+      - VPCGatewayAttachment
+      - PublicRouteTable
+      - InternetGateway
+
+  ####### Subnet
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      Comment: Public Subnet A
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+          - '0'
+          - Fn::GetAZs:
+              Ref: AWS::Region
+      CidrBlock: "192.168.3.0/24"
+      VpcId:
+        Ref: VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::AccountId}-eks-PublicSubnetA"
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+    DependsOn:
+      - PublicRoute
+
+  ElasticIPNatGateway:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt ElasticIPNatGateway.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::AccountId}-eks-nat-gateway"
+    DependsOn:
+      - ElasticIPNatGateway
+      - PublicSubnetA
+
+################# Bastion Host
+  BastionASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn:
+      - VPC
+    Properties:
+      AutoScalingGroupName: !Join ["", [!Ref "AWS::StackName", "BastionHostASG"]]
+      LaunchConfigurationName: !Ref BastionLaunchConfig
+      VPCZoneIdentifier:
+        - !Ref PublicSubnetA
+      MinSize: "1"
+      DesiredCapacity: "1"
+      MaxSize: "1"
+      Tags:
+        -
+          Key: Name
+          Value: !Join ["", [!Ref "AWS::StackName", "-BastionHost"]]
+          PropagateAtLaunch: true
+
+  BastionLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      LaunchConfigurationName: !Join ["", [!Ref "AWS::StackName", "BastionHostLaunchConfiguration"]]
+      AssociatePublicIpAddress: true
+      ImageId: "ami-0142f6ace1c558c7d"
+      InstanceType: t3.micro
+      IamInstanceProfile: !Ref BastionProfile
+      KeyName: !Ref KeyName
+      SecurityGroups:
+        - !Ref BastionSecurityGroup
+      UserData: !Base64
+        "Fn::Sub": |
+          #!/bin/bash
+          set -o xtrace
+          yum install -y python3 python3-pip tar openssh-server vim-minimal bash-completion jq && yum clean all && pip3 install awscli
+          curl -o /usr/local/bin/kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.20.4/2021-04-12/bin/linux/amd64/kubectl && \
+              chmod +x /usr/local/bin/kubectl && \
+              curl -o /usr/local/bin/aws-iam-authenticator https://amazon-eks.s3.us-west-2.amazonaws.com/1.21.2/2021-07-05/bin/linux/amd64/aws-iam-authenticator && \
+              chmod +x /usr/local/bin/aws-iam-authenticator && \
+              curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp && \
+              sudo mv /tmp/eksctl /usr/local/bin
+          eksctl create cluster --name ${AWS::AccountId}-eks --region ${AWS::Region} --with-oidc --ssh-access --ssh-public-key ${KeyName}
+          aws eks --region ${AWS::Region} update-kubeconfig --name ${AWS::AccountId}-eks
+          timeout 10m bash -c -- 'while [ -z "$status" ] || [ "$status" != "\"ACTIVE\"" ]; do status=$(aws eks --region ${AWS::Region} describe-cluster --name ${AWS::AccountId}-eks --query cluster.status);echo $status; sleep 2; done'
+          accesstoken=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/access/tokens' \
+          --header 'Content-Type: application/json' \
+          --header 'X-LW-UAKS: ${LaceworkSecretKey}' \
+          --data-raw '{
+          "keyId": "${LaceworkAccessKeyID}",
+          "expiryTime": 86400
+          }' | jq -r '.token')
+          agenttoken=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/AgentAccessTokens' \
+          --header 'Content-Type: application/json' \
+          --header "Authorization: Bearer $accesstoken" \
+          --data-raw '{
+          "tokenEnabled": "1",
+          "tokenAlias": "aws-immersion-day-eks"
+          }' | jq -r '.data.accessToken')
+          scanner_response=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/ContainerRegistries' \
+          --header 'Content-Type: application/json' \
+          --header "Authorization: Bearer $accesstoken" \
+          --data-raw '{
+          "name": "${AWS::AccountId}-codepipeline-scanner",
+          "type": "ContVulnCfg",
+          "enabled": 1,
+          "data": {
+          "registryType": "INLINE_SCANNER",
+          "limitNumScan": "15"
+          }
+          }')
+          echo $scanner_response
+          ecr_scanner_response=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/ContainerRegistries' \
+          --header 'Content-Type: application/json' \
+          --header "Authorization: Bearer $accesstoken" \
+          --data-raw '{
+          "name": "${AWS::AccountId}-ecr-docker-scanner",
+          "type": "ContVulnCfg",
+          "enabled": 1,
+          "data": {
+          "crossAccountCredentials": {
+          "externalId": "${AWS::StackId}",
+          "roleArn": "${LaceworkCrossAccountECRRole.Arn}"
+          },
+          "awsAuthType": "AWS_IAM",
+          "registryType": "AWS_ECR",
+          "registryDomain": "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com",
+          "limitNumImg": 5,
+          "limitByRep": [ ],
+          "nonOsPackageEval": true,
+          "limitByTag": [ ],
+          "limitByLabel": [ ]
+          }
+          }')
+          echo $ecr_scanner_response
+          curl -O https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/manifests/lacework-cfg-k8s-agent.yaml
+          sed "s|accessToken|$agenttoken|g" lacework-cfg-k8s-agent.yaml > my-lacework-cfg-k8s-agent.yaml
+          kubectl apply -f my-lacework-cfg-k8s-agent.yaml
+          curl -O https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/manifests/lacework-k8s-agent.yaml
+          kubectl apply -f lacework-cfg-k8s-agent.yaml
+          kubectl create secret docker-registry regcred \
+            --docker-server=${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com \
+            --docker-username=AWS \
+            --docker-password=$(aws ecr get-login-password --region ${AWS::Region})
+
+  BastionProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+        - Ref: BastionRole
+
+  BastionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: EksAllAccess
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action: eks:*
+              Resource: "*"
+            - Effect: Allow
+              Action: ecr:GetAuthorizationToken
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - ssm:GetParameter
+                - ssm:GetParameters
+              Resource:
+                - !Join ['', ['arn:aws:ssm:*:', !Ref 'AWS::AccountId', ':parameter/aws/*' ]]
+                - "arn:aws:ssm:*::parameter/aws/*"
+            - Effect: Allow
+              Action:
+                - kms:CreateGrant
+                - kms:DescribeKey
+              Resource: "*"
+      - PolicyName: IamLimitedAccess
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - iam:CreateInstanceProfile
+                - iam:DeleteInstanceProfile
+                - iam:GetInstanceProfile
+                - iam:RemoveRoleFromInstanceProfile
+                - iam:GetRole
+                - iam:CreateRole
+                - iam:DeleteRole
+                - iam:AttachRolePolicy
+                - iam:PutRolePolicy
+                - iam:ListInstanceProfiles
+                - iam:AddRoleToInstanceProfile
+                - iam:ListInstanceProfilesForRole
+                - iam:PassRole
+                - iam:DetachRolePolicy
+                - iam:DeleteRolePolicy
+                - iam:GetRolePolicy
+                - iam:GetOpenIDConnectProvider
+                - iam:CreateOpenIDConnectProvider
+                - iam:DeleteOpenIDConnectProvider
+                - iam:TagOpenIDConnectProvider
+                - iam:ListAttachedRolePolicies
+                - iam:TagRole
+              Resource:
+                - !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':instance-profile/eksctl-*' ]]
+                - !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':role/eksctl-*' ]]
+                - !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':oidc-provider/*' ]]
+                - !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':role/aws-service-role/eks-nodegroup.amazonaws.com/AWSServiceRoleForAmazonEKSNodegroup' ]]
+                - !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':role/eksctl-managed-*' ]]
+            - Effect: Allow
+              Action:
+                - iam:GetRole
+              Resource: !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':role/*' ]]
+            - Effect: Allow
+              Action:
+                - iam:CreateServiceLinkedRole
+              Resource: "*"
+              Condition:
+                StringEquals:
+                  iam:AWSServiceName:
+                    - eks.amazonaws.com
+                    - eks-nodegroup.amazonaws.com
+                    - eks-fargate.amazonaws.com
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+        - "arn:aws:iam::aws:policy/AWSCloudFormationFullAccess"
+
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn:
+      - VPC
+    Properties:
+      GroupDescription: Bastion Host Security Group
+      VpcId: !Ref VPC
+      GroupName: !Join ["", [ !Ref "AWS::StackName", "BastionHostSecurityGroup"]]
+
+  SecurityGroupSshIngressRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref BastionSecurityGroup
+      IpProtocol: "tcp"
+      FromPort: 22
+      ToPort: 22
+      CidrIp: "0.0.0.0/0"
+
+  ####### Lifecycle hook to attempt deletion of EKS cluster
+  LambdaZipsBucket:
+    Type: AWS::S3::Bucket
+
+  CopyZips:
+    Type: Custom::CopyZips
+    Properties:
+      ServiceToken: !GetAtt 'CopyZipsFunction.Arn'
+      DestBucket: !Ref 'LambdaZipsBucket'
+      SourceBucket: !Ref 'S3BucketName'
+      Prefix: !Ref 'S3KeyPrefix'
+      Objects:
+        - '/lambda/deleteeks.zip'
+
+  CopyZipsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Path: /
+      Policies:
+        - PolicyName: lambda-copier
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectTagging
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${S3BucketName}/${S3KeyPrefix}*'
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:PutObjectTagging
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${LambdaZipsBucket}/${S3KeyPrefix}*'
+
+  CopyZipsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Copies objects from the S3 bucket to a new location.
+      Handler: index.handler
+      Runtime: python3.7
+      Role: !GetAtt 'CopyZipsRole.Arn'
+      Timeout: 240
+      Code:
+        ZipFile: |
+          import json
+          import logging
+          import threading
+          import boto3
+          import cfnresponse
+          def copy_objects(source_bucket, dest_bucket, prefix, objects):
+              s3 = boto3.client('s3')
+              for o in objects:
+                  key = prefix + o
+                  copy_source = {
+                      'Bucket': source_bucket,
+                      'Key': key
+                  }
+                  print('copy_source: %s' % copy_source)
+                  print('dest_bucket = %s'%dest_bucket)
+                  print('key = %s' %key)
+                  s3.copy_object(CopySource=copy_source, Bucket=dest_bucket,
+                        Key=key)
+          def delete_objects(bucket, prefix, objects):
+              s3 = boto3.client('s3')
+              objects = {'Objects': [{'Key': prefix + o} for o in objects]}
+              s3.delete_objects(Bucket=bucket, Delete=objects)
+          def timeout(event, context):
+              logging.error('Execution is about to time out, sending failure response to CloudFormation')
+              cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)
+          def handler(event, context):
+              # make sure we send a failure to CloudFormation if the function
+              # is going to timeout
+              timer = threading.Timer((context.get_remaining_time_in_millis()
+                        / 1000.00) - 0.5, timeout, args=[event, context])
+              timer.start()
+              print('Received event: %s' % json.dumps(event))
+              status = cfnresponse.SUCCESS
+              try:
+                  source_bucket = event['ResourceProperties']['SourceBucket']
+                  dest_bucket = event['ResourceProperties']['DestBucket']
+                  prefix = event['ResourceProperties']['Prefix']
+                  objects = event['ResourceProperties']['Objects']
+                  if event['RequestType'] == 'Delete':
+                      delete_objects(dest_bucket, prefix, objects)
+                  else:
+                      copy_objects(source_bucket, dest_bucket, prefix, objects)
+              except Exception as e:
+                  logging.error('Exception: %s' % e, exc_info=True)
+                  status = cfnresponse.FAILED
+              finally:
+                  timer.cancel()
+                  cfnresponse.send(event, context, status, {}, None)
+
+  EKSDeleteFunction:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - CopyZips
+    Properties:
+      Code:
+        S3Bucket: !Ref LambdaZipsBucket
+        S3Key: !Join ['', [!Ref 'S3KeyPrefix', '/lambda/deleteeks.zip']]
+      Handler: deleteeks.lambda_handler
+      Runtime: python3.7
+      Timeout: 900
+      Environment:
+        Variables:
+          lambda_zips_bucket: !Ref LambdaZipsBucket
+          eks_delete_function_role: !Ref EKSDeleteFunctionRole
+          bastion_asg_lifecycle_hook: !Ref BastionASGLifecycleHook
+          bastion_asg: !Ref BastionASG
+      Role: !GetAtt EKSDeleteFunctionRole.Arn
+
+  EKSDeleteFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: EksAllAccess
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: eks:*
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Join ['', ['arn:aws:ssm:*:', !Ref 'AWS::AccountId', ':parameter/aws/*' ]]
+                  - "arn:aws:ssm:*::parameter/aws/*"
+              - Effect: Allow
+                Action:
+                  - kms:CreateGrant
+                  - kms:DescribeKey
+                Resource: "*"
+        - PolicyName: IamLimitedAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:CreateInstanceProfile
+                  - iam:DeleteInstanceProfile
+                  - iam:GetInstanceProfile
+                  - iam:RemoveRoleFromInstanceProfile
+                  - iam:GetRole
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:AttachRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:ListInstanceProfiles
+                  - iam:AddRoleToInstanceProfile
+                  - iam:ListInstanceProfilesForRole
+                  - iam:PassRole
+                  - iam:DetachRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:GetOpenIDConnectProvider
+                  - iam:CreateOpenIDConnectProvider
+                  - iam:DeleteOpenIDConnectProvider
+                  - iam:TagOpenIDConnectProvider
+                  - iam:ListAttachedRolePolicies
+                  - iam:TagRole
+                Resource:
+                  - !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':instance-profile/eksctl-*' ]]
+                  - !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':role/eksctl-*' ]]
+                  - !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':oidc-provider/*' ]]
+                  - !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':role/aws-service-role/eks-nodegroup.amazonaws.com/AWSServiceRoleForAmazonEKSNodegroup' ]]
+                  - !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':role/eksctl-managed-*' ]]
+              - Effect: Allow
+                Action:
+                  - iam:GetRole
+                Resource: !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':role/*' ]]
+              - Effect: Allow
+                Action:
+                  - iam:CreateServiceLinkedRole
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    iam:AWSServiceName:
+                      - eks.amazonaws.com
+                      - eks-nodegroup.amazonaws.com
+                      - eks-fargate.amazonaws.com
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+        - "arn:aws:iam::aws:policy/AWSCloudFormationFullAccess"
+
+  EKSDeleteFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !GetAtt EKSDeleteFunction.Arn
+      Principal: events.amazonaws.com
+
+  BastionASGEvents:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        EventPattern:
+          detail-type:
+            - EC2 Instance-terminate Lifecycle Action
+          source:
+            - aws.autoscaling
+      Targets:
+        - Arn: !GetAtt EKSDeleteFunction.Arn
+          Id: IDEKSDeleteFunction
+
+  BastionASGLifecycleHook:
+    Type: AWS::AutoScaling::LifecycleHook
+    Properties:
+      AutoScalingGroupName: !Ref BastionASG
+      LifecycleTransition: autoscaling:EC2_INSTANCE_TERMINATING
+      HeartbeatTimeout: 300
+
+####### Outputs
+
+Outputs:
+  PipelineUrl:
+    Value: !Sub https://console.aws.amazon.com/codepipeline/home?region=${AWS::Region}#/view/${EKSPipeline}

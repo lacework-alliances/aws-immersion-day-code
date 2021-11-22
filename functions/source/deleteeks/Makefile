@@ -1,5 +1,5 @@
-PROJECT = LaceworkSetup
-DIR_NAME = setup
+PROJECT = deleteeks
+DIR_NAME = deleteeks
 FUNCTION = $(PROJECT)
 DIST_DIR ?= "$(BASE)"/functions/packages/$(DIR_NAME)
 
@@ -13,7 +13,7 @@ clean:
 
 build: clean
 	mkdir build
-	cp  setup.py *.yaml build/
+	cp  *.py build/
 	pip install -r requirements.txt -t build/
 	cd build; zip -r $(DIST_DIR)/$(FUNCTION).zip .
 	rm -rf build

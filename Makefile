@@ -3,6 +3,8 @@ BUCKET_PREFIX := lacework-alliances
 KEY_PREFIX := awsimmersionday
 LAMBDA_PREFIX := lambda/
 APP_PREFIX := app/
+MANIFEST_DIR := manifests
+MANIFEST_PREFIX := manifests
 CFT_PREFIX := templates
 CFT_DIR := templates
 
@@ -30,12 +32,17 @@ upload: $(s3_buckets)
 $(s3_buckets):
 	$(info [+] Uploading artifacts to '$@' bucket)
 	@$(MAKE) _upload_templates BUCKET_NAME=$@
+	@$(MAKE) _upload_manifests BUCKET_NAME=$@
 	@$(MAKE) _upload_lambda_zip BUCKET_NAME=$@
 	@$(MAKE) _upload_app_zip BUCKET_NAME=$@
 
 _upload_templates:
 	$(info [+] Uploading templates to $(BUCKET_NAME) bucket)
 	@aws --profile $(PROFILE) --region $(REGION) s3 cp $(CFT_DIR)/ s3://$(BUCKET_NAME)/$(KEY_PREFIX)/$(CFT_PREFIX) --recursive --exclude "*" --include "*.yaml" --include "*.yml" --acl public-read
+
+_upload_manifests:
+	$(info [+] Uploading manifests to $(BUCKET_NAME) bucket)
+	@aws --profile $(PROFILE) --region $(REGION) s3 cp $(MANIFEST_DIR)/ s3://$(BUCKET_NAME)/$(KEY_PREFIX)/$(MANIFEST_PREFIX) --recursive --exclude "*" --include "*.yaml" --include "*.yml" --acl public-read
 
 _upload_app_zip:
 	$(info [+] Uploading app to $(BUCKET_NAME) bucket)

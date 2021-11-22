@@ -1,0 +1,591 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Set up AWS DevSecOps Pipeline with CodePipeline, CodeBuild, ECR & ECS."
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Basic Configuration"
+        Parameters:
+          - LaceworkAccountName
+          - LaceworkAccessKeyID
+          - LaceworkSecretKey
+      - Label:
+          default: "Advanced Configuration"
+        Parameters:
+          - S3BucketName
+          - S3KeyPrefix
+    ParameterLabels:
+      LaceworkAccountName:
+        default: Lacework Account Name
+      LaceworkAccessKeyID:
+        default: Lacework Access Key ID
+      LaceworkSecretKey:
+        default: Lacework Secret Key
+      S3BucketName:
+        default: Cloudformation S3 Bucket
+      S3KeyPrefix:
+        default: Cloudformation S3 Key Prefix
+
+Parameters:
+  LaceworkAccountName:
+    Type: String
+    Description: Your Lacework account name. ie. <account name>.lacework.net
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$'
+    ConstraintDescription: Invalid Lacework account name. Account name may contain alphanumeric characters and dashes only.
+  LaceworkAccessKeyID:
+    Type: String
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9_]*$'
+    ConstraintDescription: Lacework API Access Key ID contains alphanumeric characters and symbols only.
+    Description: Lacework API Secret Key ID. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
+  LaceworkSecretKey:
+    Type: String
+    NoEcho: true
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9_]*$'
+    ConstraintDescription: Lacework API Secret Key contains alphanumeric characters and symbols only.
+    Description: Lacework API Secret Key. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
+  KeyName:
+    Description: The EC2 Key Pair to allow SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+
+  # advanced
+  S3BucketName:
+    Type: String
+    Default: lacework-alliances
+    MinLength: '1'
+    Description: "S3 bucket for assets. Use this if you want to customize your deployment. The bucket name can include numbers, lowercase letters, uppercase letters, and hyphens, but it cannot start or end with hyphens (-)."
+  S3KeyPrefix:
+    Type: String
+    Default: awsimmersionday
+    MinLength: '1'
+    Description: "S3 key prefix for assets directory. Use this if you want to customize your deployment. The prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slashes (/). For more information, see https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html."
+
+Resources:
+  ####### Pipeline
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: "app-repository"
+
+  LaceworkCrossAccountECRRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Join
+        - '-'
+        - - !Ref LaceworkAccountName
+          - laceworkcwsrole-sa
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action: 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              AWS: !Join
+                - ''
+                - - 'arn:aws:iam::'
+                  - '434813966438'
+                  - ':root'
+            Condition:
+              StringEquals:
+                'sts:ExternalId': !Ref AWS::StackId
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
+
+  PermissionForEventsToInvokePipeline:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: EventsRolePolicy
+      Roles:
+        - !Ref CodePipelineEventsRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Resource: "*"
+            Effect: Allow
+            Action:
+              - codepipeline:*
+
+  CodePipelineEventsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+
+  CodePipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: AWS-CodePipeline-Service-3
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codecommit:CancelUploadArchive
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:UploadArchive
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - codedeploy:CreateDeployment
+                  - codedeploy:GetApplicationRevision
+                  - codedeploy:GetDeployment
+                  - codedeploy:GetDeploymentConfig
+                  - codedeploy:RegisterApplicationRevision
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StartBuild
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource: '*'
+
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${ECRRepository}
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource: "*"
+
+  CodeBuildBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: "codebuild-scan-push.yaml"
+      Environment:
+        ComputeType: "BUILD_GENERAL1_SMALL"
+        Image: "aws/codebuild/docker:1.12.1"
+        Type: "LINUX_CONTAINER"
+        EnvironmentVariables:
+          - Name: AWS_REGION
+            Value: !Ref AWS::Region
+          - Name: IMAGE_NAME
+            Value: demo-app
+          - Name: DOCKER_REG
+            Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
+      Name: !Sub ${AWS::AccountId}-codebuild-build
+      ServiceRole: !Ref CodeBuildServiceRole
+
+  CodeBuildDeployProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: "codebuild-deploy-eks.yaml"
+      Environment:
+        ComputeType: "BUILD_GENERAL1_SMALL"
+        Image: "aws/codebuild/docker:1.12.1"
+        Type: "LINUX_CONTAINER"
+        EnvironmentVariables:
+          - Name: AWS_REGION
+            Value: !Ref AWS::Region
+          - Name: DOCKER_REG
+            Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
+          - Name: EKS_CLUSTER
+            Value: !Sub "${AWS::AccountId}-eks"
+          - Name: IMAGE_NAME
+            Value: demo-app
+          - Name: IMAGE_TAG
+            Value: latest
+      Name: !Sub ${AWS::AccountId}-codebuild-deploy
+      ServiceRole: !Ref CodeBuildServiceRole
+
+  ECSPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: App
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: S3
+              Configuration:
+                S3Bucket: !Ref S3BucketName
+                S3ObjectKey: !Sub "${S3KeyPrefix}/app/app.zip"
+                PollForSourceChanges: false
+              OutputArtifacts:
+                - Name: App
+              RunOrder: 1
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref CodeBuildBuildProject
+              InputArtifacts:
+                - Name: App
+              OutputArtifacts:
+                - Name: BuildOutput
+              RunOrder: 1
+        - Name: Deploy
+          Actions:
+            - Name: UpdateDeployment
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref CodeBuildDeployProject
+              InputArtifacts:
+                - Name: App
+              OutputArtifacts:
+                - Name: DeployOutput
+              RunOrder: 1
+
+####### VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: us-east-1a
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: us-east-1b
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: us-east-1a
+      VpcId: !Ref VPC
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: us-east-1b
+      VpcId: !Ref VPC
+
+  PublicRouteTableA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+  PublicRouteTableB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicDefaultRouteA:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTableA
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicDefaultRouteB:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTableB
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTableA
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTableB
+
+  PrivateRouteTableA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+  PrivateRouteTableB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  NatA:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId:
+        Fn::GetAtt: EipA.AllocationId
+      SubnetId:
+        Ref: PublicSubnetA
+  EipA:
+    DependsOn: InternetGatewayAttachment
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+  NatRouteA:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableA
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatA
+
+  NatB:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId:
+        Fn::GetAtt: EipB.AllocationId
+      SubnetId:
+        Ref: PublicSubnetB
+  EipB:
+    DependsOn: InternetGatewayAttachment
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+  NatRouteB:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableB
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatB
+
+  PrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTableA
+  PrivateSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTableB
+
+###### ECS Cluster
+EcsCluster:
+  Type: AWS::ECS::Cluster
+
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http to client host
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  ECSRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+                - ecs.amazonaws.com
+                - ecs-tasks.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        - arn:aws:iam::aws:policy/AmazonECS_FullAccess
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref DefaultSecurityGroup
+      Subnets:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+      Type: application
+
+####### Fargate Service and Task
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckPort: 80
+      HealthCheckProtocol: HTTP
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref VPC
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Order: 1
+          TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      LoadBalancerArn: !GetAtt ApplicationLoadBalancer.Arn
+      Port: 443
+      Protocol: HTTPS
+    DependsOn:
+      - TargetGroup
+
+  FargateService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref EcsCluster
+      DeploymentController:
+        Type: ECS
+      DesiredCount: 1
+      HealthCheckGracePeriodSeconds: 60
+      LaunchType: FARGATE
+      LoadBalancers:
+        - ContainerName: demo-app
+          ContainerPort: 443
+          TargetGroupArn: !Ref TargetGroup
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          SecurityGroups:
+            - !Ref ECSSecurityGroup
+          Subnets:
+            - !Ref PrivateSubnetA
+            - !Ref PrivateSubnetB
+      TaskDefinition: !Ref FargateServiceTaskDefinition
+
+  FargateServiceLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 7
+
+  FargateServiceTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ContainerDefinitions:
+        - Name: demo-app
+          Essential: true
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/demo-app:0"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref FargateServiceLogGroup
+              awslogs-stream-prefix: demo-app-container
+              awslogs-region: !Ref AWS::Region
+          PortMappings:
+            - ContainerPort: 443
+              HostPort: 443
+              Protocol: tcp
+      Cpu: '256'
+      ExecutionRoleArn: !GetAtt ECSRole.Arn
+      Memory: '512'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        -  FARGATE
+      TaskRoleArn: !GetAtt ECSRole.Arn
+
+####### Outputs
+
+Outputs:
+  PipelineUrl:
+    Value: !Sub https://console.aws.amazon.com/codepipeline/home?region=${AWS::Region}#/view/${ECSPipeline}
