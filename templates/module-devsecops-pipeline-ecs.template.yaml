@@ -222,7 +222,7 @@ Resources:
         BuildSpec: "codebuild-scan-push.yaml"
       Environment:
         ComputeType: "BUILD_GENERAL1_SMALL"
-        Image: "aws/codebuild/docker:1.12.1"
+        Image: "aws/codebuild/amazonlinux2-x86_64-standard:3.0"
         Type: "LINUX_CONTAINER"
         EnvironmentVariables:
           - Name: AWS_REGION
@@ -244,7 +244,7 @@ Resources:
         BuildSpec: "codebuild-deploy-eks.yaml"
       Environment:
         ComputeType: "BUILD_GENERAL1_SMALL"
-        Image: "aws/codebuild/docker:1.12.1"
+        Image: "aws/codebuild/amazonlinux2-x86_64-standard:3.0"
         Type: "LINUX_CONTAINER"
         EnvironmentVariables:
           - Name: AWS_REGION
