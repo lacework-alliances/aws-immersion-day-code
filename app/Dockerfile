@@ -4,7 +4,10 @@ WORKDIR /usr/src/app
 
 COPY . .
 
-RUN npm ci && npm run build
+RUN npm install
+RUN npm install -g @angular/cli
+
+RUN ng build --configuration production
 
 FROM public.ecr.aws/nginx/nginx:1.20-alpine
 

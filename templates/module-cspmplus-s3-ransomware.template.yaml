@@ -41,7 +41,7 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: "RansomwareTargetBucket"
-      AccessControl: "public-read-write"
+      AccessControl: PublicReadWrite
 
   CopyZips:
     Type: Custom::CopyZips
