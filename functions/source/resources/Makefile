@@ -1,5 +1,5 @@
-PROJECT = s3encrypt
-DIR_NAME = s3encrypt
+PROJECT = resources
+DIR_NAME = resources
 FUNCTION = $(PROJECT)
 DIST_DIR ?= "$(BASE)"/functions/packages/$(DIR_NAME)
 

@@ -15,31 +15,17 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
-import random
-import string
+import json
 
 import boto3
-import json
 import logging
 import os
-import time
 
-import requests
 import urllib3
 from crhelper import CfnResource
 
 SUCCESS = "SUCCESS"
 FAILED = "FAILED"
-
-LOG_NAME_PREFIX = "Lacework-Control-Tower-CloudTrail-Log-Account-"
-AUDIT_NAME_PREFIX = "Lacework-Control-Tower-CloudTrail-Audit-Account-"
-CONTROL_TOWER_CLOUDTRAIL_STACK = "aws-controltower-BaselineCloudTrail"
-
-STACK_SET_SUCCESS_STATES = ["SUCCEEDED"]
-STACK_SET_RUNNING_STATES = ["RUNNING", "STOPPING"]
-
-DESCRIPTION = "Lacework's cloud-native threat detection, compliance, behavioral anomaly detection, "
-"and automated AWS security monitoring."
 
 http = urllib3.PoolManager()
 
@@ -54,8 +40,7 @@ helper = CfnResource(json_logging=False, log_level="INFO", boto_level="CRITICAL"
 
 
 def lambda_handler(event, context):
-  logger.info("s3ransomware.lambda_handler called.")
-  logger.info(json.dumps(event))
+  logger.info("resources.lambda_handler called.")
   try:
     if "RequestType" in event: helper(event, context)
   except Exception as e:
@@ -65,32 +50,40 @@ def lambda_handler(event, context):
 @helper.create
 @helper.update
 def create(event, context):
-  logger.info("setup.create called.")
-  logger.info(json.dumps(event))
-
-  bucket_name = os.environ['bucket_name']
-  kms_key_arn = os.environ['kms_key_arn']
-
-  s3_client = session.client('s3')
-
-  objects = s3_client.list_objects_v2(Bucket=bucket_name, MaxKeys=100)['Contents']
-
-  client = session.resource('s3')
-
-  for obj in objects:
-    client.meta.client.copy({'Bucket': bucket_name, 'Key': obj['Key']}, bucket_name, obj['Key'], ExtraArgs={'ServerSideEncryption': 'aws:kms', 'SSEKMSKeyId': kms_key_arn})
-
+  logger.info("resources.create called and does nothing right now.")
   send_cfn_response(event, context, SUCCESS, {})
-  return None
+  # add honeycomb telemetry
 
 
-@helper.delete  # crhelper method to delete stack set and stack instances
+@helper.delete
 def delete(event, context):
-  logger.info("setup.delete called.")
+  logger.info("resources.delete called.")
+  eks_client = session.client("eks")
+  aws_account_id = context.invoked_function_arn.split(":")[4]
 
+  cluster = "{}-eks".format(aws_account_id)
+  ngdict = eks_client.list_nodegroups(
+    clusterName=cluster
+  )
+  for ng in ngdict['nodegroups']:
+    logger.info(eks_client.delete_nodegroup(
+      clusterName=cluster,
+      nodegroupName=ng
+    ))
+
+  response = eks_client.delete_cluster(
+    name=cluster
+  )
+  logger.info("Deleted cluster {} {}".format(cluster, response))
+
+  logger.info("Delete last resources")
+  logger.info("Deleting artifact s3 bucket")
+  bucket = os.environ['artifact_bucket']
+  s3 = boto3.resource('s3')
+  bucket = s3.Bucket(bucket)
+  bucket.objects.delete()
+  logger.info(bucket.delete())
   send_cfn_response(event, context, SUCCESS, {})
-  return None
-
 
 def send_cfn_response(event, context, response_status, response_data, physical_resource_id=None, no_echo=False,
                       reason=None):

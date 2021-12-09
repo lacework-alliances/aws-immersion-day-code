@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Set up an ECS cluster."
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Basic Configuration"
+        Parameters:
+          - VpcId
+          - PublicSubnetA
+          - PublicSubnetB
+
+    ParameterLabels:
+      VpcId:
+        default: VPC ID
+      PublicSubnetA:
+        default: Public Subnet A
+      PublicSubnetB:
+        default: Public Subnet B
+
+Parameters:
+  VpcId:
+    Type: String
+    Description: Id of VPC stack to build off of
+    Default: VpcId
+  PublicSubnetA:
+    Type: String
+    Description: Public subnet for VPZ Zone Identifier
+    Default: PublicSubnetA
+  PublicSubnetB:
+    Type: String
+    Description: Public subnet for VPZ Zone Identifier
+    Default: PublicSubnetB
+
+Resources:
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+
+  DefaultSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http to client host
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  DefaultRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+                - ecs.amazonaws.com
+                - ecs-tasks.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        - arn:aws:iam::aws:policy/AmazonECS_FullAccess
+
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref DefaultSecurityGroup
+      Subnets:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+      Type: application
+
+
+Outputs:
+  EcsClusterExport:
+    Description: A reference to the created ECS Cluster
+    Value: !Ref EcsCluster
+    Export:
+      Name: !Sub ${AWS::StackName}-ecs-cluster
+
+  DefaultSecurityGroupExport:
+    Description: A reference to the created SG
+    Value: !Ref DefaultSecurityGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-default-security-group
+
+  DefaultRoleExport:
+    Description: A reference to the created IAM Role
+    Value: !Ref DefaultRole
+    Export:
+      Name: !Sub ${AWS::StackName}-default-role
+
+  ApplicationLoadBalancerArnExport:
+    Description: A reference to the created ALB
+    Value: !Ref ApplicationLoadBalancer
+    Export:
+      Name: !Sub ${AWS::StackName}-alb-arn

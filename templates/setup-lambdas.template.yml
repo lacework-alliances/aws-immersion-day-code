@@ -1,21 +1,18 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: "Set up a S3 ransomware scenario that can be prevented and investigated with Lacework."
+Description: "Set up Lambda functions and S3 buckets."
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label:
-          default: "S3 Object to Copy"
+          default: "Basic Configuration"
         Parameters:
           - S3BucketName
           - S3KeyPrefix
-          - S3Object
     ParameterLabels:
       S3BucketName:
-        default: S3 Bucket
+        default: CloudFormation S3 Bucket
       S3KeyPrefix:
-        default: S3 Key Prefix
-      S3Object:
-        default: S3 Object
+        default: CloudFormation S3 Key Prefix
 
 Parameters:
   S3BucketName:
@@ -28,30 +25,38 @@ Parameters:
     Default: awsimmersionday
     MinLength: '1'
     Description: "S3 key prefix for assets directory. Use this if you want to customize your deployment. The prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slashes (/). For more information, see https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html."
-  S3Object:
-    Type: String
-    Default: /app/app.zip
-    MinLength: '1'
-    Description: "S3 object to copy. Use this if you want to customize your deployment."
-  KeyName:
-    Description: The EC2 Key Pair to allow SSH access to the instances
-    Type: AWS::EC2::KeyPair::KeyName
+
 Resources:
-  S3Bucket:
+  RansomwareBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: "RansomwareTargetBucket"
+      BucketName: "ransomware-target-bucket"
       AccessControl: PublicReadWrite
 
-  CopyZips:
-    Type: Custom::CopyZips
+  LambdaZipsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: "immers-day-devsecops-eks-lambda-zips-bucket"
+
+  CopyLambdaZips:
+    Type: Custom::CopyLambdaZips
     Properties:
       ServiceToken: !GetAtt 'CopyZipsFunction.Arn'
-      DestBucket: !Ref S3Bucket
+      DestBucket: !Ref 'LambdaZipsBucket'
       SourceBucket: !Ref 'S3BucketName'
       Prefix: !Ref 'S3KeyPrefix'
       Objects:
-        - !Ref S3Object
+        - '/lambda/resources.zip'
+
+  CopyRansomwareZips:
+    Type: Custom::CopyLambdaZips
+    Properties:
+      ServiceToken: !GetAtt 'CopyZipsFunction.Arn'
+      DestBucket: !Ref 'RansomwareBucket'
+      SourceBucket: !Ref 'S3BucketName'
+      Prefix: !Ref 'S3KeyPrefix'
+      Objects:
+        - '/app/app.zip'
 
   CopyZipsRole:
     Type: AWS::IAM::Role
@@ -83,7 +88,8 @@ Resources:
                   - s3:DeleteObject
                   - s3:PutObjectTagging
                 Resource:
-                  - !Sub 'arn:${AWS::Partition}:s3:::${S3Bucket}/${S3KeyPrefix}*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${LambdaZipsBucket}/${S3KeyPrefix}*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${RansomwareBucket}/${S3KeyPrefix}*'
 
   CopyZipsFunction:
     Type: AWS::Lambda::Function
@@ -144,132 +150,23 @@ Resources:
                   timer.cancel()
                   cfnresponse.send(event, context, status, {}, None)
 
-  ####### Bastion VPC
-  VPC:
-    Type: AWS::EC2::VPC
-    Properties:
-      CidrBlock: "172.16.0.0/16"
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
-      Tags:
-        - Key: Name
-          Value: !Sub "${AWS::AccountId}-eks-vpc"
+  ResourcesFunction:
+    Type: AWS::Lambda::Function
     DependsOn:
-      - ElasticIPNatGateway
-
-  InternetGateway:
-    Type: "AWS::EC2::InternetGateway"
-
-  VPCGatewayAttachment:
-    Type: "AWS::EC2::VPCGatewayAttachment"
+      - CopyLambdaZips
     Properties:
-      InternetGatewayId: !Ref InternetGateway
-      VpcId: !Ref VPC
+      Code:
+        S3Bucket: !Ref LambdaZipsBucket
+        S3Key: !Join ['', [!Ref 'S3KeyPrefix', '/lambda/resources.zip']]
+      Handler: resources.lambda_handler
+      Runtime: python3.7
+      Timeout: 900
+      Environment:
+        Variables:
+          artifact_bucket: "immers-day-devsecops-eks-artifact-bucket"
+      Role: !GetAtt ResourcesFunctionRole.Arn
 
-  PublicRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: Public Subnets
-        - Key: Network
-          Value: Public
-
-  PublicRoute:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
-    DependsOn:
-      - VPCGatewayAttachment
-      - PublicRouteTable
-      - InternetGateway
-
-  ####### Subnet
-
-  PublicSubnetA:
-    Type: AWS::EC2::Subnet
-    Metadata:
-      Comment: Public Subnet A
-    Properties:
-      AvailabilityZone:
-        Fn::Select:
-          - '0'
-          - Fn::GetAZs:
-              Ref: AWS::Region
-      CidrBlock: "172.16.3.0/24"
-      VpcId:
-        Ref: VPC
-      Tags:
-        - Key: Name
-          Value: !Sub "${AWS::AccountId}-eks-PublicSubnetA"
-
-  PublicSubnetARouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnetA
-      RouteTableId: !Ref PublicRouteTable
-    DependsOn:
-      - PublicRoute
-
-  ElasticIPNatGateway:
-    Type: AWS::EC2::EIP
-    Properties:
-      Domain: vpc
-
-  NATGateway:
-    Type: AWS::EC2::NatGateway
-    Properties:
-      AllocationId: !GetAtt ElasticIPNatGateway.AllocationId
-      SubnetId: !Ref PublicSubnetA
-      Tags:
-        - Key: Name
-          Value: !Sub "${AWS::AccountId}-eks-nat-gateway"
-    DependsOn:
-      - ElasticIPNatGateway
-      - PublicSubnetA
-
-  ################# Bastion Host
-  BastionASG:
-    Type: AWS::AutoScaling::AutoScalingGroup
-    DependsOn:
-      - VPC
-    Properties:
-      AutoScalingGroupName: !Join ["", [!Ref "AWS::StackName", "BastionHostASG"]]
-      LaunchConfigurationName: !Ref BastionLaunchConfig
-      VPCZoneIdentifier:
-        - !Ref PublicSubnetA
-      MinSize: "1"
-      DesiredCapacity: "1"
-      MaxSize: "1"
-      Tags:
-        -
-          Key: Name
-          Value: !Join ["", [!Ref "AWS::StackName", "-BastionHost"]]
-          PropagateAtLaunch: true
-
-  BastionLaunchConfig:
-    Type: AWS::AutoScaling::LaunchConfiguration
-    Properties:
-      LaunchConfigurationName: !Join ["", [!Ref "AWS::StackName", "BastionHostLaunchConfiguration"]]
-      AssociatePublicIpAddress: true
-      ImageId: "ami-0142f6ace1c558c7d"
-      InstanceType: t3.micro
-      IamInstanceProfile: !Ref BastionProfile
-      KeyName: !Ref KeyName
-      SecurityGroups:
-        - !Ref BastionSecurityGroup
-
-  BastionProfile:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      Path: "/"
-      Roles:
-        - Ref: BastionRole
-
-  BastionRole:
+  ResourcesFunctionRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -278,7 +175,7 @@ Resources:
           - Effect: Allow
             Principal:
               Service:
-                - ec2.amazonaws.com
+                - lambda.amazonaws.com
             Action:
               - sts:AssumeRole
       Path: "/"
@@ -289,9 +186,6 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: eks:*
-                Resource: "*"
-              - Effect: Allow
-                Action: ecr:GetAuthorizationToken
                 Resource: "*"
               - Effect: Allow
                 Action:
@@ -357,25 +251,23 @@ Resources:
         - "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
         - "arn:aws:iam::aws:policy/AWSCloudFormationFullAccess"
 
-  BastionSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    DependsOn:
-      - VPC
+  ResourcesFunctionPermission:
+    Type: AWS::Lambda::Permission
     Properties:
-      GroupDescription: Bastion Host Security Group
-      VpcId: !Ref VPC
-      GroupName: !Join ["", [ !Ref "AWS::StackName", "BastionHostSecurityGroup"]]
+      Action: "lambda:InvokeFunction"
+      FunctionName: !GetAtt ResourcesFunction.Arn
+      Principal: events.amazonaws.com
 
-  SecurityGroupSshIngressRule:
-    Type: AWS::EC2::SecurityGroupIngress
+  ResourcesFunctionExecute:
+    Type: AWS::CloudFormation::CustomResource
     Properties:
-      GroupId: !Ref BastionSecurityGroup
-      IpProtocol: "tcp"
-      FromPort: 22
-      ToPort: 22
-      CidrIp: "0.0.0.0/0"
+      ServiceToken:
+        !GetAtt ResourcesFunction.Arn
 
-#########
+####### Outputs
+
 Outputs:
-  S3Bucket:
-    Value: !Ref S3Bucket
+  RansomwareBucket:
+    Value: !Ref RansomwareBucket
+  LambdaZipsBucket:
+    Value: !Ref LambdaZipsBucket

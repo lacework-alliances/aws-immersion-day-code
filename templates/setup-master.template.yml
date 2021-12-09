@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Set up AWS DevSecOps Pipeline with CodePipeline, CodeBuild, ECR & EKS and secure with Lacework."
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Basic Configuration"
+        Parameters:
+          - LaceworkAccountName
+          - LaceworkAccessKeyID
+          - LaceworkSecretKey
+      - Label:
+          default: "Advanced Configuration"
+        Parameters:
+          - S3BucketName
+          - S3KeyPrefix
+    ParameterLabels:
+      LaceworkAccountName:
+        default: Lacework Account Name
+      LaceworkAccessKeyID:
+        default: Lacework Access Key ID
+      LaceworkSecretKey:
+        default: Lacework Secret Key
+      S3BucketName:
+        default: CloudFormation S3 Bucket
+      S3KeyPrefix:
+        default: CloudFormation S3 Key Prefix
+
+Parameters:
+  LaceworkAccountName:
+    Type: String
+    Description: Your Lacework account name. ie. <account name>.lacework.net
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$'
+    ConstraintDescription: Invalid Lacework account name. Account name may contain alphanumeric characters and dashes only.
+  LaceworkAccessKeyID:
+    Type: String
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9_]*$'
+    ConstraintDescription: Lacework API Access Key ID contains alphanumeric characters and symbols only.
+    Description: Lacework API Secret Key ID. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
+  LaceworkSecretKey:
+    Type: String
+    NoEcho: true
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9_]*$'
+    ConstraintDescription: Lacework API Secret Key contains alphanumeric characters and symbols only.
+    Description: Lacework API Secret Key. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
+  KeyName:
+    Description: The EC2 Key Pair to allow SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+
+  # advanced
+  S3BucketName:
+    Type: String
+    Default: lacework-alliances
+    MinLength: '1'
+    Description: "S3 bucket for assets. Use this if you want to customize your deployment. The bucket name can include numbers, lowercase letters, uppercase letters, and hyphens, but it cannot start or end with hyphens (-)."
+  S3KeyPrefix:
+    Type: String
+    Default: awsimmersionday
+    MinLength: '1'
+    Description: "S3 key prefix for assets directory. Use this if you want to customize your deployment. The prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slashes (/). For more information, see https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html."
+
+Resources:
+  BaseVpc:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: >-
+        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-vpc.template.yml
+
+  BastionEks:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: BaseVpc
+    Properties:
+      TemplateURL: >-
+        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-bastion-eks.template.yml
+      Parameters:
+        VpcId: !GetAtt BaseVpc.Outputs.VpcId
+        PublicSubnetA: !GetAtt BaseVpc.Outputs.PublicSubnetA
+        PublicSubnetB: !GetAtt BaseVpc.Outputs.PublicSubnetB
+        LaceworkAccountName: !Ref LaceworkAccountName
+        LaceworkAccessKeyID: !Ref LaceworkAccessKeyID
+        LaceworkSecretKey: !Ref LaceworkSecretKey
+        KeyName: !Ref KeyName
+
+  Ecs:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: BaseVpc
+    Properties:
+      TemplateURL: >-
+        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-ecs.template.yml
+      Parameters:
+        VpcId: !GetAtt BaseVpc.Outputs.VpcId
+        PublicSubnetA: !GetAtt BaseVpc.Outputs.PublicSubnetA
+        PublicSubnetB: !GetAtt BaseVpc.Outputs.PublicSubnetB
+
+  LambdaFunctions:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: >-
+        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-lambdas.template.yml
+      Parameters:
+        S3BucketName: !Ref S3BucketName
+        S3KeyPrefix: !Ref S3KeyPrefix
+
+  Pipelines:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: >-
+        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-pipelines.template.yml
+      Parameters:
+        S3BucketName: !Ref S3BucketName
+        S3KeyPrefix: !Ref S3KeyPrefix
+
+

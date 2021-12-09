@@ -1,0 +1,306 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Set up a Bastion Host and EKS cluster."
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Basic Configuration"
+        Parameters:
+          - VpcId
+          - PublicSubnetA
+          - PublicSubnetB
+          - LaceworkAccountName
+          - LaceworkAccessKeyID
+          - LaceworkSecretKey
+          - KeyName
+    ParameterLabels:
+      VpcId:
+        default: VPC ID
+      PublicSubnetA:
+        default: Public Subnet A
+      PublicSubnetB:
+        default: Public Subnet B
+      LaceworkAccountName:
+        default: Lacework Account Name
+      LaceworkAccessKeyID:
+        default: Lacework Access Key ID
+      LaceworkSecretKey:
+        default: Lacework Secret Key
+      KeyName:
+        default: AWS SSH Key for Bastion
+
+Parameters:
+  VpcId:
+    Type: String
+    Description: Id of VPC stack to build off of
+    Default: VpcId
+  PublicSubnetA:
+    Type: String
+    Description: Public subnet for VPZ Zone Identifier
+    Default: PublicSubnetA
+  PublicSubnetB:
+    Type: String
+    Description: Public subnet for VPZ Zone Identifier
+    Default: PublicSubnetB
+  LaceworkAccountName:
+    Type: String
+    Description: Your Lacework account name. ie. <account name>.lacework.net
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$'
+    ConstraintDescription: Invalid Lacework account name. Account name may contain alphanumeric characters and dashes only.
+  LaceworkAccessKeyID:
+    Type: String
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9_]*$'
+    ConstraintDescription: Lacework API Access Key ID contains alphanumeric characters and symbols only.
+    Description: Lacework API Secret Key ID. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
+  LaceworkSecretKey:
+    Type: String
+    NoEcho: true
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9_]*$'
+    ConstraintDescription: Lacework API Secret Key contains alphanumeric characters and symbols only.
+    Description: Lacework API Secret Key. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
+  KeyName:
+    Description: The EC2 Key Pair to allow SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+
+Resources:
+  BastionASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Join ["", [!Ref "AWS::StackName", "BastionHostASG"]]
+      LaunchConfigurationName: !Ref BastionLaunchConfig
+      VPCZoneIdentifier:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+      MinSize: "1"
+      DesiredCapacity: "1"
+      MaxSize: "1"
+      Tags:
+        -
+          Key: Name
+          Value: !Join ["", [!Ref "AWS::StackName", "-BastionHost"]]
+          PropagateAtLaunch: true
+
+  LaceworkCrossAccountECRRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Join
+        - '-'
+        - - !Ref LaceworkAccountName
+          - laceworkcwsrole-sa
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action: 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              AWS: !Join
+                - ''
+                - - 'arn:aws:iam::'
+                  - '434813966438'
+                  - ':root'
+            Condition:
+              StringEquals:
+                'sts:ExternalId': !Ref AWS::StackId
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
+
+  BastionLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      LaunchConfigurationName: !Join ["", [!Ref "AWS::StackName", "BastionHostLaunchConfiguration"]]
+      AssociatePublicIpAddress: true
+      ImageId: "ami-0142f6ace1c558c7d"
+      InstanceType: t3.micro
+      IamInstanceProfile: !Ref BastionProfile
+      KeyName: !Ref KeyName
+      SecurityGroups:
+        - !Ref BastionSecurityGroup
+      UserData: !Base64
+        "Fn::Sub": |
+          #!/bin/bash
+          set -o xtrace
+          yum install -y python3 python3-pip tar openssh-server vim-minimal bash-completion jq && yum clean all && pip3 install awscli
+          curl -o /usr/local/bin/kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.20.4/2021-04-12/bin/linux/amd64/kubectl && \
+              chmod +x /usr/local/bin/kubectl && \
+              curl -o /usr/local/bin/aws-iam-authenticator https://amazon-eks.s3.us-west-2.amazonaws.com/1.21.2/2021-07-05/bin/linux/amd64/aws-iam-authenticator && \
+              chmod +x /usr/local/bin/aws-iam-authenticator && \
+              curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp && \
+              sudo mv /tmp/eksctl /usr/local/bin
+          eksctl create cluster --name ${AWS::AccountId}-eks --region ${AWS::Region} --with-oidc --ssh-access --ssh-public-key ${KeyName}
+          aws eks --region ${AWS::Region} update-kubeconfig --name ${AWS::AccountId}-eks
+          timeout 10m bash -c -- 'while [ -z "$status" ] || [ "$status" != "\"ACTIVE\"" ]; do status=$(aws eks --region ${AWS::Region} describe-cluster --name ${AWS::AccountId}-eks --query cluster.status);echo $status; sleep 2; done'
+          accesstoken=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/access/tokens' \
+          --header 'Content-Type: application/json' \
+          --header 'X-LW-UAKS: ${LaceworkSecretKey}' \
+          --data-raw '{
+          "keyId": "${LaceworkAccessKeyID}",
+          "expiryTime": 86400
+          }' | jq -r '.token')
+          agenttoken=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/AgentAccessTokens' \
+          --header 'Content-Type: application/json' \
+          --header "Authorization: Bearer $accesstoken" \
+          --data-raw '{
+          "tokenEnabled": "1",
+          "tokenAlias": "${AWS::AccountId}-aws-immersion-day-eks-${AWS::StackId}"
+          }' | jq -r '.data.accessToken')
+          inline_scanner_token=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/ContainerRegistries' \
+          --header 'Content-Type: application/json' \
+          --header "Authorization: Bearer $accesstoken" \
+          --data-raw '{
+          "name": "${AWS::AccountId}-codepipeline-scanner-${AWS::StackId}",
+          "type": "ContVulnCfg",
+          "enabled": 1,
+          "data": {
+          "registryType": "INLINE_SCANNER",
+          "limitNumScan": "15"
+          }
+          }' | jq -r '.data.serverToken.serverToken')
+          echo $inline_scanner_token
+          aws ssm put-parameter --region ${AWS::Region} --name "LWAccountName" --type "String" --value ${LaceworkAccountName} --overwrite
+          aws ssm put-parameter --region ${AWS::Region} --name "InlineScannerToken" --type "String" --value $inline_scanner_token --overwrite
+          ecr_scanner_response=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/ContainerRegistries' \
+          --header 'Content-Type: application/json' \
+          --header "Authorization: Bearer $accesstoken" \
+          --data-raw '{
+          "name": "${AWS::AccountId}-ecr-docker-scanner-${AWS::StackId}",
+          "type": "ContVulnCfg",
+          "enabled": 1,
+          "data": {
+          "crossAccountCredentials": {
+          "externalId": "${AWS::StackId}",
+          "roleArn": "${LaceworkCrossAccountECRRole.Arn}"
+          },
+          "awsAuthType": "AWS_IAM",
+          "registryType": "AWS_ECR",
+          "registryDomain": "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com",
+          "limitNumImg": 5,
+          "limitByRep": [ ],
+          "nonOsPackageEval": true,
+          "limitByTag": [ ],
+          "limitByLabel": [ ]
+          }
+          }')
+          echo $ecr_scanner_response
+          curl -O https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/manifests/lacework-cfg-k8s-agent.yaml
+          sed "s|accessToken|$agenttoken|g" lacework-cfg-k8s-agent.yaml > my-lacework-cfg-k8s-agent.yaml
+          kubectl apply -f my-lacework-cfg-k8s-agent.yaml
+          curl -O https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/manifests/lacework-k8s-agent.yaml
+          kubectl apply -f lacework-cfg-k8s-agent.yaml
+          kubectl create secret docker-registry regcred \
+            --docker-server=${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com \
+            --docker-username=AWS \
+            --docker-password=$(aws ecr get-login-password --region ${AWS::Region})
+
+  BastionProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+        - Ref: BastionRole
+
+  BastionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: EksAllAccess
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: eks:*
+                Resource: "*"
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:PutParameter
+                Resource:
+                  - !Join ['', ['arn:aws:ssm:*:', !Ref 'AWS::AccountId', ':parameter/*' ]]
+              - Effect: Allow
+                Action:
+                  - kms:CreateGrant
+                  - kms:DescribeKey
+                Resource: "*"
+        - PolicyName: IamLimitedAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:CreateInstanceProfile
+                  - iam:DeleteInstanceProfile
+                  - iam:GetInstanceProfile
+                  - iam:RemoveRoleFromInstanceProfile
+                  - iam:GetRole
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:AttachRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:ListInstanceProfiles
+                  - iam:AddRoleToInstanceProfile
+                  - iam:ListInstanceProfilesForRole
+                  - iam:PassRole
+                  - iam:DetachRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:GetOpenIDConnectProvider
+                  - iam:CreateOpenIDConnectProvider
+                  - iam:DeleteOpenIDConnectProvider
+                  - iam:TagOpenIDConnectProvider
+                  - iam:ListAttachedRolePolicies
+                  - iam:TagRole
+                Resource:
+                  - !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':instance-profile/eksctl-*' ]]
+                  - !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':role/eksctl-*' ]]
+                  - !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':oidc-provider/*' ]]
+                  - !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':role/aws-service-role/eks-nodegroup.amazonaws.com/AWSServiceRoleForAmazonEKSNodegroup' ]]
+                  - !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':role/eksctl-managed-*' ]]
+              - Effect: Allow
+                Action:
+                  - iam:GetRole
+                Resource: !Join ['', ['arn:aws:iam::', !Ref 'AWS::AccountId', ':role/*' ]]
+              - Effect: Allow
+                Action:
+                  - iam:CreateServiceLinkedRole
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    iam:AWSServiceName:
+                      - eks.amazonaws.com
+                      - eks-nodegroup.amazonaws.com
+                      - eks-fargate.amazonaws.com
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+        - "arn:aws:iam::aws:policy/AWSCloudFormationFullAccess"
+
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Bastion Host Security Group
+      VpcId: !Ref VpcId
+      GroupName: !Join ["", [ !Ref "AWS::StackName", "BastionHostSecurityGroup"]]
+
+  SecurityGroupSshIngressRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref BastionSecurityGroup
+      IpProtocol: "tcp"
+      FromPort: 22
+      ToPort: 22
+      CidrIp: "0.0.0.0/0"
