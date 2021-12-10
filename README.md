@@ -1,5 +1,7 @@
 # Demo App
 
+[![CIS](https://app.soluble.cloud/api/v1/public/badges/ab1a444d-a781-4fad-a266-a9f60dfda14d.svg)](https://app.soluble.cloud/repos/details/github.com/jefferyfry/aws-immersion-day-with-lacework-code)  [![IaC](https://app.soluble.cloud/api/v1/public/badges/a99398a3-388d-4053-b7f0-18a5ff6ad642.svg)](https://app.soluble.cloud/repos/details/github.com/jefferyfry/aws-immersion-day-with-lacework-code)  
+
 This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 10.1.7.
 
 ![demo-app](https://drive.google.com/uc?export=view&id=1GBfyMHdmEh1QgJmmPSOEzMvz5d6921Cq)
