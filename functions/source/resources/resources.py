@@ -58,10 +58,34 @@ def create(event, context):
 @helper.delete
 def delete(event, context):
   logger.info("resources.delete called.")
+
+  try:
+    logger.info("Deleting artifact s3 bucket")
+    bucket = os.environ['artifact_bucket']
+    s3 = boto3.resource('s3')
+    bucket = s3.Bucket(bucket)
+    bucket.objects.delete()
+    logger.info(bucket.delete())
+  except Exception as delete_bucket_exception:
+    logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_bucket_exception))
+
+  try:
+    logger.info("Deleting respository")
+    ecr_client = session.client("ecr")
+    aws_account_id = context.invoked_function_arn.split(":")[4]
+    logger.info(ecr_client.delete_repository(
+      registryId=aws_account_id,
+      repositoryName="demo-app",
+      force=True
+    ))
+  except Exception as delete_repo_exception:
+    logger.warning("Problem occurred while deleting repository: {}".format(delete_repo_exception))
+
   eks_client = session.client("eks")
   aws_account_id = context.invoked_function_arn.split(":")[4]
 
   cluster = "{}-eks".format(aws_account_id)
+  waiter = eks_client.get_waiter('nodegroup_deleted')
   ngdict = eks_client.list_nodegroups(
     clusterName=cluster
   )
@@ -71,19 +95,24 @@ def delete(event, context):
       nodegroupName=ng
     ))
 
+    waiter.wait(
+      clusterName=cluster,
+      nodegroupName=ng,
+      WaiterConfig={
+        'Delay': 30,
+        'MaxAttempts': 20
+      }
+    )
+
   response = eks_client.delete_cluster(
     name=cluster
   )
   logger.info("Deleted cluster {} {}".format(cluster, response))
 
   logger.info("Delete last resources")
-  logger.info("Deleting artifact s3 bucket")
-  bucket = os.environ['artifact_bucket']
-  s3 = boto3.resource('s3')
-  bucket = s3.Bucket(bucket)
-  bucket.objects.delete()
-  logger.info(bucket.delete())
+
   send_cfn_response(event, context, SUCCESS, {})
+
 
 def send_cfn_response(event, context, response_status, response_data, physical_resource_id=None, no_echo=False,
                       reason=None):

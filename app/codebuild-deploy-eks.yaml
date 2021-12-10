@@ -1,13 +1,12 @@
 version: 0.2
 phases:
-  deploy:
+  post_build:
     commands:
-      - aws eks --region "$AWS_REGION" update-kubeconfig --name "$EKS_CLUSTER"
-      - kubectl get svc
+      - aws eks update-kubeconfig --name $EKS_CLUSTER --role-arn arn:aws:iam::$AWS_ACCOUNT_ID:role/eks-codebuild-kubectl-role
       - sed "s|imageName|$DOCKER_REG/$IMAGE_NAME:$IMAGE_TAG|g" deployment.yaml > my-deployment.yaml
       - cat my-deployment.yaml
       - kubectl apply -f my-deployment.yaml
-      - while [ -z "$url" ]; do url=$(kubectl describe service demo-app | grep 'LoadBalancer Ingress:' | awk 'printf "https://%s",$3;'); sleep 2; done
+      - while [ -z "$url" ]; do url=$(kubectl describe service demo-app | grep 'LoadBalancer Ingress:' | awk '{printf "https://%s",$3;}'); sleep 2; done
       - echo "$url"
       - echo "Demo App launched!"
 

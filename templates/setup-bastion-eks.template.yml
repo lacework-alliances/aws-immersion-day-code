@@ -68,6 +68,10 @@ Parameters:
 Resources:
   BastionASG:
     Type: AWS::AutoScaling::AutoScalingGroup
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT30M
     Properties:
       AutoScalingGroupName: !Join ["", [!Ref "AWS::StackName", "BastionHostASG"]]
       LaunchConfigurationName: !Ref BastionLaunchConfig
@@ -122,16 +126,19 @@ Resources:
         "Fn::Sub": |
           #!/bin/bash
           set -o xtrace
-          yum install -y python3 python3-pip tar openssh-server vim-minimal bash-completion jq && yum clean all && pip3 install awscli
+          pwd
+          yum install -y python3 python3-pip tar openssh-server vim-minimal bash-completion jq at && yum clean all && pip3 install awscli
           curl -o /usr/local/bin/kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.20.4/2021-04-12/bin/linux/amd64/kubectl && \
               chmod +x /usr/local/bin/kubectl && \
               curl -o /usr/local/bin/aws-iam-authenticator https://amazon-eks.s3.us-west-2.amazonaws.com/1.21.2/2021-07-05/bin/linux/amd64/aws-iam-authenticator && \
               chmod +x /usr/local/bin/aws-iam-authenticator && \
               curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp && \
               sudo mv /tmp/eksctl /usr/local/bin
-          eksctl create cluster --name ${AWS::AccountId}-eks --region ${AWS::Region} --with-oidc --ssh-access --ssh-public-key ${KeyName}
+          # CREATE AND WAIT FOR THE EKC CLUSTER
+          eksctl create cluster --name ${AWS::StackName} --region ${AWS::Region} --with-oidc --ssh-access --ssh-public-key ${KeyName}
           aws eks --region ${AWS::Region} update-kubeconfig --name ${AWS::AccountId}-eks
           timeout 10m bash -c -- 'while [ -z "$status" ] || [ "$status" != "\"ACTIVE\"" ]; do status=$(aws eks --region ${AWS::Region} describe-cluster --name ${AWS::AccountId}-eks --query cluster.status);echo $status; sleep 2; done'
+          # GET AN ACCESS TOKEN FROM LACEWORK
           accesstoken=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/access/tokens' \
           --header 'Content-Type: application/json' \
           --header 'X-LW-UAKS: ${LaceworkSecretKey}' \
@@ -139,6 +146,7 @@ Resources:
           "keyId": "${LaceworkAccessKeyID}",
           "expiryTime": 86400
           }' | jq -r '.token')
+          # GET AN AGENT TOKEN FROM LACEWORK
           agenttoken=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/AgentAccessTokens' \
           --header 'Content-Type: application/json' \
           --header "Authorization: Bearer $accesstoken" \
@@ -146,6 +154,7 @@ Resources:
           "tokenEnabled": "1",
           "tokenAlias": "${AWS::AccountId}-aws-immersion-day-eks-${AWS::StackId}"
           }' | jq -r '.data.accessToken')
+          # GET AN INLINE SCANNER TOKEN FROM LACEWORK
           inline_scanner_token=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/ContainerRegistries' \
           --header 'Content-Type: application/json' \
           --header "Authorization: Bearer $accesstoken" \
@@ -159,8 +168,10 @@ Resources:
           }
           }' | jq -r '.data.serverToken.serverToken')
           echo $inline_scanner_token
+          # STORE THE INLINE SCANNER TOKEN IN SSM
           aws ssm put-parameter --region ${AWS::Region} --name "LWAccountName" --type "String" --value ${LaceworkAccountName} --overwrite
           aws ssm put-parameter --region ${AWS::Region} --name "InlineScannerToken" --type "String" --value $inline_scanner_token --overwrite
+          # CONFIGURE LACEWORK TO SCAN OUR ECS REPO
           ecr_scanner_response=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/ContainerRegistries' \
           --header 'Content-Type: application/json' \
           --header "Authorization: Bearer $accesstoken" \
@@ -184,16 +195,27 @@ Resources:
           }
           }')
           echo $ecr_scanner_response
+          # SETUP THE LACEWORK AGENT ON THE EKS CLUSTER
           curl -O https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/manifests/lacework-cfg-k8s-agent.yaml
           sed "s|accessToken|$agenttoken|g" lacework-cfg-k8s-agent.yaml > my-lacework-cfg-k8s-agent.yaml
+          cat my-lacework-cfg-k8s-agent.yaml
           kubectl apply -f my-lacework-cfg-k8s-agent.yaml
           curl -O https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/manifests/lacework-k8s-agent.yaml
           kubectl apply -f lacework-cfg-k8s-agent.yaml
+          # CREATE A K8S SECRET FOR ECR REPO AUTHENTICATION
           kubectl create secret docker-registry regcred \
             --docker-server=${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com \
             --docker-username=AWS \
             --docker-password=$(aws ecr get-login-password --region ${AWS::Region})
-
+          # ADD ROLE TO K8s FOR ACCESS TO THE EKS CLUSTER VIA KUBECTL FOR CODEBUILD
+          kubectl get configmap aws-auth -o yaml -n kube-system
+          ROLE="    - rolearn: arn:aws:iam::${AWS::AccountId}:role/eks-codebuild-kubectl-role\n      username: build\n      groups:\n        - system:masters"
+          kubectl get -n kube-system configmap/aws-auth -o yaml | awk "/mapRoles: \|/{print;print \"$ROLE\";next}1" > /tmp/aws-auth-patch.yml
+          kubectl patch configmap/aws-auth -n kube-system --patch "$(cat /tmp/aws-auth-patch.yml)"
+          kubectl get configmap aws-auth -o yaml -n kube-system
+          # SIMULARE A RANSOMWARE SCAN
+          aws s3api list-buckets --region ${AWS::Region} | at now +24 hours
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource BastionASG --region ${AWS::Region}
   BastionProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
@@ -215,12 +237,15 @@ Resources:
               - sts:AssumeRole
       Path: "/"
       Policies:
-        - PolicyName: EksAllAccess
+        - PolicyName: ResourceAccess
           PolicyDocument:
             Version: 2012-10-17
             Statement:
               - Effect: Allow
                 Action: eks:*
+                Resource: "*"
+              - Effect: Allow
+                Action: s3:*
                 Resource: "*"
               - Effect: Allow
                 Action: ecr:GetAuthorizationToken
