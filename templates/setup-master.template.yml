@@ -69,20 +69,20 @@ Resources:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-vpc.template.yml
 
-  BastionEks:
-    Type: AWS::CloudFormation::Stack
-    DependsOn: BaseVpc
-    Properties:
-      TemplateURL: >-
-        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-bastion-eks.template.yml
-      Parameters:
-        VpcId: !GetAtt BaseVpc.Outputs.VpcId
-        PublicSubnetA: !GetAtt BaseVpc.Outputs.PublicSubnetA
-        PublicSubnetB: !GetAtt BaseVpc.Outputs.PublicSubnetB
-        LaceworkAccountName: !Ref LaceworkAccountName
-        LaceworkAccessKeyID: !Ref LaceworkAccessKeyID
-        LaceworkSecretKey: !Ref LaceworkSecretKey
-        KeyName: !Ref KeyName
+#  BastionEks:
+#    Type: AWS::CloudFormation::Stack
+#    DependsOn: BaseVpc
+#    Properties:
+#      TemplateURL: >-
+#        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-bastion-eks.template.yml
+#      Parameters:
+#        VpcId: !GetAtt BaseVpc.Outputs.VpcId
+#        PublicSubnetA: !GetAtt BaseVpc.Outputs.PublicSubnetA
+#        PublicSubnetB: !GetAtt BaseVpc.Outputs.PublicSubnetB
+#        LaceworkAccountName: !Ref LaceworkAccountName
+#        LaceworkAccessKeyID: !Ref LaceworkAccessKeyID
+#        LaceworkSecretKey: !Ref LaceworkSecretKey
+#        KeyName: !Ref KeyName
 
   Ecs:
     Type: AWS::CloudFormation::Stack

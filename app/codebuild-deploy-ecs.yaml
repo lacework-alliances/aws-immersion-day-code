@@ -2,14 +2,8 @@ version: 0.2
 phases:
   post_build:
     commands:
-      - curl -o aws-iam-authenticator https://amazon-eks.s3.us-west-2.amazonaws.com/1.19.6/2021-01-05/bin/linux/amd64/aws-iam-authenticator
-      - chmod +x ./aws-iam-authenticator
-      - mkdir -p $HOME/bin && cp ./aws-iam-authenticator $HOME/bin/aws-iam-authenticator && export PATH=$PATH:$HOME/bin
-      - aws configure set default.region $AWS_REGION
-      - docker login -u AWS -p $PASSWORD $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
-      - sed "s|imageName|$DOCKER_REG/$IMAGE_NAME:$IMAGE_TAG|g" task-definition-ecs.json > my-task-definition-ecs.yaml
-      - export run_number=$CODEBUILD_BUILD_NUMBER
-      - chmod +x ./deploy.sh
-      - ./deploy.sh
+      - printf '[{"name":"demo-app","imageUri":"%s"}]' $DOCKER_REG/$IMAGE_NAME:$IMAGE_TAG > imagedefinitions.json
       - echo "Demo App launched!"
+artifacts:
+  files: imagedefinitions.json
 

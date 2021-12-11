@@ -36,7 +36,7 @@ Resources:
   EcsCluster:
     Type: AWS::ECS::Cluster
 
-  DefaultSecurityGroup:
+  PublicLoadBalancerSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Allow http to client host
@@ -68,60 +68,100 @@ Resources:
           ToPort: 443
           CidrIp: 0.0.0.0/0
 
-  DefaultRole:
-    Type: 'AWS::IAM::Role'
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - ec2.amazonaws.com
-                - ecs.amazonaws.com
-                - ecs-tasks.amazonaws.com
-            Action:
-              - 'sts:AssumeRole'
-      Path: /
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
-        - arn:aws:iam::aws:policy/AmazonECS_FullAccess
-
-
-  ApplicationLoadBalancer:
+  PublicLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       IpAddressType: ipv4
       Scheme: internet-facing
       SecurityGroups:
-        - !Ref DefaultSecurityGroup
+        - !Ref PublicLoadBalancerSG
       Subnets:
         - !Ref PublicSubnetA
         - !Ref PublicSubnetB
       Type: application
 
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn:
+      - PublicLoadBalancer
+    Properties:
+      TargetType: ip
+      HealthCheckIntervalSeconds: 6
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 2
+      VpcId: !Ref VpcId
 
-Outputs:
-  EcsClusterExport:
-    Description: A reference to the created ECS Cluster
-    Value: !Ref EcsCluster
-    Export:
-      Name: !Sub ${AWS::StackName}-ecs-cluster
+  PublicLoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn:
+      - PublicLoadBalancer
+      - TargetGroup
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: 'forward'
+      LoadBalancerArn: !Ref PublicLoadBalancer
+      Port: 80
+      Protocol: HTTP
 
-  DefaultSecurityGroupExport:
-    Description: A reference to the created SG
-    Value: !Ref DefaultSecurityGroup
-    Export:
-      Name: !Sub ${AWS::StackName}-default-security-group
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ ecs-tasks.amazonaws.com ]
+            Action: [ 'sts:AssumeRole' ]
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
 
-  DefaultRoleExport:
-    Description: A reference to the created IAM Role
-    Value: !Ref DefaultRole
-    Export:
-      Name: !Sub ${AWS::StackName}-default-role
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      Family: "demo-app"
+      ContainerDefinitions:
+        - Name: "demo-app"
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/demo-app"
+          Essential: true
+          PortMappings:
+            - HostPort: 80
+              Protocol: tcp
+              ContainerPort: 80
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc
+      Cpu: 256
+      Memory: 512
 
-  ApplicationLoadBalancerArnExport:
-    Description: A reference to the created ALB
-    Value: !Ref ApplicationLoadBalancer
-    Export:
-      Name: !Sub ${AWS::StackName}-alb-arn
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: PublicLoadBalancerListener
+    Properties:
+      ServiceName: "demo-app-ecs-service"
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref ECSTaskDefinition
+      DeploymentController:
+        Type: ECS
+      DesiredCount: 1
+      HealthCheckGracePeriodSeconds: 300
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref PublicLoadBalancerSG
+          Subnets:
+            - !Ref PublicSubnetA
+            - !Ref PublicSubnetB
+      LoadBalancers:
+        - ContainerName: "demo-app"
+          ContainerPort: 80
+          TargetGroupArn: !Ref TargetGroup

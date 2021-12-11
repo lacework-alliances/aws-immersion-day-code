@@ -103,6 +103,15 @@ Resources:
                 Resource: '*'
               - Effect: Allow
                 Action:
+                  - 'codedeploy:CreateDeployment'
+                  - 'codedeploy:GetApplication'
+                  - 'codedeploy:GetApplicationRevision'
+                  - 'codedeploy:GetDeployment'
+                  - 'codedeploy:GetDeploymentConfig'
+                  - 'codedeploy:RegisterApplicationRevision'
+                Resource: '*'
+              - Effect: Allow
+                Action:
                   - codebuild:BatchGetBuilds
                   - codebuild:StartBuild
                 Resource: '*'
@@ -260,12 +269,8 @@ Resources:
         Image: "aws/codebuild/standard:5.0"
         Type: "LINUX_CONTAINER"
         EnvironmentVariables:
-          - Name: AWS_REGION
-            Value: !Ref AWS::Region
           - Name: DOCKER_REG
             Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
-          - Name: EKS_CLUSTER
-            Value: !Sub "${AWS::AccountId}-eks"
           - Name: IMAGE_NAME
             Value: demo-app
           - Name: IMAGE_TAG
@@ -310,7 +315,7 @@ Resources:
                 - Name: App
               OutputArtifacts:
                 - Name: BuildOutput
-              RunOrder: 1
+              RunOrder: 2
         - Name: Deploy
           Actions:
             - Name: UpdateDeployment
@@ -325,7 +330,7 @@ Resources:
                 - Name: App
               OutputArtifacts:
                 - Name: DeployOutput
-              RunOrder: 1
+              RunOrder: 3
 
   ECSPipeline:
     Type: AWS::CodePipeline::Pipeline
@@ -365,7 +370,7 @@ Resources:
                 - Name: App
               OutputArtifacts:
                 - Name: BuildOutput
-              RunOrder: 1
+              RunOrder: 2
         - Name: Deploy
           Actions:
             - Name: UpdateDeployment
@@ -380,7 +385,31 @@ Resources:
                 - Name: App
               OutputArtifacts:
                 - Name: DeployOutput
-              RunOrder: 1
+              RunOrder: 3
+
+  CodeDeployServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "code-deploy-service-role"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codedeploy.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+  CodeDeployApplication:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ApplicationName: !Sub ${AWS::AccountId}-codedeploy-ecs
+      ComputePlatform: ECS
 
 ####### Outputs
 

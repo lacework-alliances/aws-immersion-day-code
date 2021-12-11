@@ -81,35 +81,39 @@ def delete(event, context):
   except Exception as delete_repo_exception:
     logger.warning("Problem occurred while deleting repository: {}".format(delete_repo_exception))
 
-  eks_client = session.client("eks")
-  aws_account_id = context.invoked_function_arn.split(":")[4]
+  try:
+    eks_client = session.client("eks")
+    aws_account_id = context.invoked_function_arn.split(":")[4]
 
-  cluster = "{}-eks".format(aws_account_id)
-  waiter = eks_client.get_waiter('nodegroup_deleted')
-  ngdict = eks_client.list_nodegroups(
-    clusterName=cluster
-  )
-  for ng in ngdict['nodegroups']:
-    logger.info(eks_client.delete_nodegroup(
-      clusterName=cluster,
-      nodegroupName=ng
-    ))
-
-    waiter.wait(
-      clusterName=cluster,
-      nodegroupName=ng,
-      WaiterConfig={
-        'Delay': 30,
-        'MaxAttempts': 20
-      }
+    cluster = "{}-eks".format(aws_account_id)
+    waiter = eks_client.get_waiter('nodegroup_deleted')
+    ngdict = eks_client.list_nodegroups(
+      clusterName=cluster
     )
+    for ng in ngdict['nodegroups']:
+      logger.info(eks_client.delete_nodegroup(
+        clusterName=cluster,
+        nodegroupName=ng
+      ))
 
-  response = eks_client.delete_cluster(
-    name=cluster
-  )
-  logger.info("Deleted cluster {} {}".format(cluster, response))
+      waiter.wait(
+        clusterName=cluster,
+        nodegroupName=ng,
+        WaiterConfig={
+          'Delay': 30,
+          'MaxAttempts': 20
+        }
+      )
+  except Exception as delete_ng_exception:
+    logger.warning("Problem occurred while deleting cluster nodegroup: {}".format(delete_ng_exception))
 
-  logger.info("Delete last resources")
+  try:
+    response = eks_client.delete_cluster(
+      name=cluster
+    )
+    logger.info("Deleted cluster {} {}".format(cluster, response))
+  except Exception as delete_cluster_exception:
+    logger.warning("Problem occurred while deleting cluster: {}".format(delete_cluster_exception))
 
   send_cfn_response(event, context, SUCCESS, {})
 

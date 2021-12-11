@@ -7,8 +7,7 @@ phases:
   build:
     commands:
       - docker version
-      - docker build -t "$IMAGE_NAME:$CODEBUILD_BUILD_NUMBER" .
-      - docker tag "$IMAGE_NAME:$CODEBUILD_BUILD_NUMBER" "$DOCKER_REG/$IMAGE_NAME:$CODEBUILD_BUILD_NUMBER"
+      - docker build -t "$DOCKER_REG/$IMAGE_NAME:$CODEBUILD_BUILD_NUMBER" -t "$DOCKER_REG/$IMAGE_NAME:latest" .
   post_build:
     commands:
       - export LW_ACCOUNT_NAME=$LW_ACCOUNT_NAME
@@ -17,9 +16,9 @@ phases:
       - rm -rf ./evaluations/$IMAGE_NAME/$CODEBUILD_BUILD_NUMBER/evaluation_*.json || true
       - curl -L https://github.com/lacework/lacework-vulnerability-scanner/releases/latest/download/lw-scanner-linux-amd64 -o lw-scanner
       - chmod +x lw-scanner
-      - ./lw-scanner image evaluate $IMAGE_NAME $CODEBUILD_BUILD_NUMBER --build-id $CODEBUILD_BUILD_NUMBER --data-directory .
+      - ./lw-scanner image evaluate $DOCKER_REG/$IMAGE_NAME $CODEBUILD_BUILD_NUMBER --build-id $CODEBUILD_BUILD_NUMBER --data-directory .
       - echo 'Can evaluate the results to fail build.'
       - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $DOCKER_REG
-      - docker push "$DOCKER_REG/$IMAGE_NAME:$CODEBUILD_BUILD_NUMBER"
+      - docker image push -a "$DOCKER_REG/$IMAGE_NAME"
 
 
