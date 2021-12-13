@@ -71,7 +71,7 @@ Resources:
     CreationPolicy:
       ResourceSignal:
         Count: 1
-        Timeout: PT30M
+        Timeout: PT45M
     Properties:
       AutoScalingGroupName: !Join ["", [!Ref "AWS::StackName", "BastionHostASG"]]
       LaunchConfigurationName: !Ref BastionLaunchConfig
@@ -135,7 +135,7 @@ Resources:
               curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp && \
               sudo mv /tmp/eksctl /usr/local/bin
           # CREATE AND WAIT FOR THE EKC CLUSTER
-          eksctl create cluster --name ${AWS::StackName} --region ${AWS::Region} --with-oidc --ssh-access --ssh-public-key ${KeyName}
+          eksctl create cluster --name ${AWS::AccountId}-eks --region ${AWS::Region} --with-oidc --ssh-access --ssh-public-key ${KeyName}
           aws eks --region ${AWS::Region} update-kubeconfig --name ${AWS::AccountId}-eks
           timeout 10m bash -c -- 'while [ -z "$status" ] || [ "$status" != "\"ACTIVE\"" ]; do status=$(aws eks --region ${AWS::Region} describe-cluster --name ${AWS::AccountId}-eks --query cluster.status);echo $status; sleep 2; done'
           # GET AN ACCESS TOKEN FROM LACEWORK
@@ -147,12 +147,19 @@ Resources:
           "expiryTime": 86400
           }' | jq -r '.token')
           # GET AN AGENT TOKEN FROM LACEWORK
-          agenttoken=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/AgentAccessTokens' \
+          eks_agent_token=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/AgentAccessTokens' \
           --header 'Content-Type: application/json' \
           --header "Authorization: Bearer $accesstoken" \
           --data-raw '{
           "tokenEnabled": "1",
           "tokenAlias": "${AWS::AccountId}-aws-immersion-day-eks-${AWS::StackId}"
+          }' | jq -r '.data.accessToken')
+          ecs_agent_token=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/AgentAccessTokens' \
+          --header 'Content-Type: application/json' \
+          --header "Authorization: Bearer $accesstoken" \
+          --data-raw '{
+          "tokenEnabled": "1",
+          "tokenAlias": "${AWS::AccountId}-aws-immersion-day-ecs-${AWS::StackId}"
           }' | jq -r '.data.accessToken')
           # GET AN INLINE SCANNER TOKEN FROM LACEWORK
           inline_scanner_token=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/ContainerRegistries' \
@@ -168,9 +175,11 @@ Resources:
           }
           }' | jq -r '.data.serverToken.serverToken')
           echo $inline_scanner_token
-          # STORE THE INLINE SCANNER TOKEN IN SSM
+          # STORE THE LACEWORK TOKENS IN SSM
           aws ssm put-parameter --region ${AWS::Region} --name "LWAccountName" --type "String" --value ${LaceworkAccountName} --overwrite
+          aws ssm put-parameter --region ${AWS::Region} --name "AccessToken" --type "String" --value $accesstoken --overwrite
           aws ssm put-parameter --region ${AWS::Region} --name "InlineScannerToken" --type "String" --value $inline_scanner_token --overwrite
+          aws ssm put-parameter --region ${AWS::Region} --name "ECSAgentToken" --type "String" --value $ecs_agent_token --overwrite
           # CONFIGURE LACEWORK TO SCAN OUR ECS REPO
           ecr_scanner_response=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/ContainerRegistries' \
           --header 'Content-Type: application/json' \
@@ -197,7 +206,7 @@ Resources:
           echo $ecr_scanner_response
           # SETUP THE LACEWORK AGENT ON THE EKS CLUSTER
           curl -O https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/manifests/lacework-cfg-k8s-agent.yaml
-          sed "s|accessToken|$agenttoken|g" lacework-cfg-k8s-agent.yaml > my-lacework-cfg-k8s-agent.yaml
+          sed "s|accessToken|$eks_agent_token|g" lacework-cfg-k8s-agent.yaml > my-lacework-cfg-k8s-agent.yaml
           cat my-lacework-cfg-k8s-agent.yaml
           kubectl apply -f my-lacework-cfg-k8s-agent.yaml
           curl -O https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/manifests/lacework-k8s-agent.yaml

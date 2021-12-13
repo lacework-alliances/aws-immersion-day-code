@@ -118,9 +118,24 @@ Resources:
             Principal:
               Service: [ ecs-tasks.amazonaws.com ]
             Action: [ 'sts:AssumeRole' ]
-      Path: /
+      Path: "/"
+      Policies:
+        - PolicyName: GetSSMParameters
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource: "*"
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+
+  ECSLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: "/ecs/demo-app-ecs-service"
 
   ECSTaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -131,15 +146,43 @@ Resources:
         - Name: "demo-app"
           Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/demo-app"
           Essential: true
+          Command:
+            - "sh"
+            - "-c"
+            - "/var/lib/lacework-backup/lacework-sidecar.sh && /opt/bitnami/node/bin/node"
+          Environment:
+            - Name: "LaceworkAccessToken"
+              Value: "{{resolve:ssm:ECSAgentToken}}"
+          VolumesFrom:
+            - SourceContainer: "datacollector-sidecar"
+              ReadOnly: true
+          DependsOn:
+            - ContainerName: "datacollector-sidecar"
+              Condition: "SUCCESS"
           PortMappings:
             - HostPort: 80
               Protocol: tcp
               ContainerPort: 80
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref ECSLogGroup
+              awslogs-stream-prefix: ecs
+        - Name: "datacollector-sidecar"
+          Image: "lacework/datacollector:latest-sidecar"
+          Essential: false
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref ECSLogGroup
+              awslogs-stream-prefix: ecs
       RequiresCompatibilities:
         - FARGATE
       NetworkMode: awsvpc
-      Cpu: 256
-      Memory: 512
+      Cpu: 512
+      Memory: 1024
 
   ECSService:
     Type: AWS::ECS::Service

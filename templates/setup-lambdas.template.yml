@@ -256,6 +256,7 @@ Resources:
       ManagedPolicyArns:
         - "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
         - "arn:aws:iam::aws:policy/AWSCloudFormationFullAccess"
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
 
   ResourcesFunctionPermission:
     Type: AWS::Lambda::Permission

@@ -70,7 +70,7 @@ def delete(event, context):
     logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_bucket_exception))
 
   try:
-    logger.info("Deleting respository")
+    logger.info("Deleting repository")
     ecr_client = session.client("ecr")
     aws_account_id = context.invoked_function_arn.split(":")[4]
     logger.info(ecr_client.delete_repository(
@@ -86,28 +86,30 @@ def delete(event, context):
     aws_account_id = context.invoked_function_arn.split(":")[4]
 
     cluster = "{}-eks".format(aws_account_id)
-    waiter = eks_client.get_waiter('nodegroup_deleted')
+    eks_waiter = eks_client.get_waiter('nodegroup_deleted')
     ngdict = eks_client.list_nodegroups(
       clusterName=cluster
     )
+    logger.info("Deleting eks cluster nodegroups")
     for ng in ngdict['nodegroups']:
       logger.info(eks_client.delete_nodegroup(
         clusterName=cluster,
         nodegroupName=ng
       ))
 
-      waiter.wait(
-        clusterName=cluster,
-        nodegroupName=ng,
-        WaiterConfig={
-          'Delay': 30,
-          'MaxAttempts': 20
-        }
-      )
+    eks_waiter.wait(
+      clusterName=cluster,
+      nodegroupName=ng,
+      WaiterConfig={
+        'Delay': 30,
+        'MaxAttempts': 20
+      }
+    )
   except Exception as delete_ng_exception:
     logger.warning("Problem occurred while deleting cluster nodegroup: {}".format(delete_ng_exception))
 
   try:
+    logger.info("Deleting eks cluster")
     response = eks_client.delete_cluster(
       name=cluster
     )
@@ -115,7 +117,27 @@ def delete(event, context):
   except Exception as delete_cluster_exception:
     logger.warning("Problem occurred while deleting cluster: {}".format(delete_cluster_exception))
 
+  try:
+    logger.info("Deleting eks stack")
+    cfn_client = session.client("cloudformation")
+    # cfn_waiter = cfn_client.get_waiter('stack_delete_complete')
+    stack_name = "eksctl-{}-eks-cluster".format(aws_account_id)
+    response = cfn_client.delete_stack(
+      StackName=stack_name
+    )
+    # cfn_waiter.wait(
+    #   StackName=stack_name,
+    #   WaiterConfig={
+    #     'Delay': 60,
+    #     'MaxAttempts': 240
+    #   }
+    # )
+    logger.info("Deleted eks stack {}".format(response))
+  except Exception as delete_stack_exception:
+    logger.warning("Problem occurred while deleting cluster: {}".format(delete_stack_exception))
+
   send_cfn_response(event, context, SUCCESS, {})
+
 
 
 def send_cfn_response(event, context, response_status, response_data, physical_resource_id=None, no_echo=False,
@@ -146,7 +168,7 @@ def send_cfn_response(event, context, response_status, response_data, physical_r
 
   try:
     response = http.request('PUT', response_url, headers=headers, body=json_response_body)
-    logger.info("Status code: {}".format(response.status))
+    logger.info("send_cfn_response: {}".format(response.status))
 
   except Exception as e:
     logger.error("send_cfn_response error {}".format(e))

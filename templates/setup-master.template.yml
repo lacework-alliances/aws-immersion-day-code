@@ -47,7 +47,7 @@ Parameters:
     ConstraintDescription: Lacework API Secret Key contains alphanumeric characters and symbols only.
     Description: Lacework API Secret Key. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
   KeyName:
-    Description: The EC2 Key Pair to allow SSH access to the instances
+    Description: The EC2 Key Pair to allow SSH access to the bastion host.
     Type: AWS::EC2::KeyPair::KeyName
 
   # advanced
@@ -69,24 +69,38 @@ Resources:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-vpc.template.yml
 
-#  BastionEks:
-#    Type: AWS::CloudFormation::Stack
-#    DependsOn: BaseVpc
-#    Properties:
-#      TemplateURL: >-
-#        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-bastion-eks.template.yml
-#      Parameters:
-#        VpcId: !GetAtt BaseVpc.Outputs.VpcId
-#        PublicSubnetA: !GetAtt BaseVpc.Outputs.PublicSubnetA
-#        PublicSubnetB: !GetAtt BaseVpc.Outputs.PublicSubnetB
-#        LaceworkAccountName: !Ref LaceworkAccountName
-#        LaceworkAccessKeyID: !Ref LaceworkAccessKeyID
-#        LaceworkSecretKey: !Ref LaceworkSecretKey
-#        KeyName: !Ref KeyName
+  BastionEks:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: BaseVpc
+    Properties:
+      TemplateURL: >-
+        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-bastion-eks.template.yml
+      Parameters:
+        VpcId: !GetAtt BaseVpc.Outputs.VpcId
+        PublicSubnetA: !GetAtt BaseVpc.Outputs.PublicSubnetA
+        PublicSubnetB: !GetAtt BaseVpc.Outputs.PublicSubnetB
+        LaceworkAccountName: !Ref LaceworkAccountName
+        LaceworkAccessKeyID: !Ref LaceworkAccessKeyID
+        LaceworkSecretKey: !Ref LaceworkSecretKey
+        KeyName: !Ref KeyName
+
+  Lacework:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - BastionEks
+    Properties:
+      TemplateURL: >-
+        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-lacework.template.yml
+      Parameters:
+        ResourceNamePrefix: !Ref LaceworkAccountName
+        ExternalID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+        CreateTrail: "Yes"
 
   Ecs:
     Type: AWS::CloudFormation::Stack
-    DependsOn: BaseVpc
+    DependsOn:
+      - BaseVpc
+      - BastionEks
     Properties:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-ecs.template.yml
@@ -97,6 +111,7 @@ Resources:
 
   Pipelines:
     Type: AWS::CloudFormation::Stack
+    DependsOn: LambdaFunctions
     Properties:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-pipelines.template.yml
