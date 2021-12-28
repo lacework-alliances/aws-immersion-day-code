@@ -222,8 +222,9 @@ Resources:
           kubectl get -n kube-system configmap/aws-auth -o yaml | awk "/mapRoles: \|/{print;print \"$ROLE\";next}1" > /tmp/aws-auth-patch.yml
           kubectl patch configmap/aws-auth -n kube-system --patch "$(cat /tmp/aws-auth-patch.yml)"
           kubectl get configmap aws-auth -o yaml -n kube-system
-          # SIMULARE A RANSOMWARE SCAN
+          # SIMULATE A RANSOMWARE SCAN
           aws s3api list-buckets --region ${AWS::Region} | at now +24 hours
+          aws s3 cp s3://ransomware-target-bucket/awsimmersionday/app/app.zip s3://ransomware-target-bucket/awsimmersionday/app/app.zip --sse aws:kms --sse-kms-key-id arn:aws:kms:us-west-2:911290716430:key/e1583228-d021-4f40-b83b-52fd722074e9 | at now +25 hours
           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource BastionASG --region ${AWS::Region}
   BastionProfile:
     Type: AWS::IAM::InstanceProfile

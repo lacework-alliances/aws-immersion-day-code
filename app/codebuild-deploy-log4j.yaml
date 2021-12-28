@@ -1,0 +1,12 @@
+version: 0.2
+phases:
+  post_build:
+    commands:
+      - aws eks update-kubeconfig --name $EKS_CLUSTER --role-arn arn:aws:iam::$AWS_ACCOUNT_ID:role/eks-codebuild-kubectl-role
+      - sed "s|imageName|$DOCKER_REG/log4j-app:latest|g" deployment-log4j.yaml > my-deployment-log4j.yaml
+      - cat my-deployment-log4j.yaml
+      - kubectl apply -f my-deployment-log4j.yaml
+      - while [ -z "$url" ]; do url=$(kubectl describe service log4j-app | grep 'LoadBalancer Ingress:' | awk '{printf "http://%s:8080",$3;}'); sleep 2; done
+      - echo "$url"
+      - echo "Log4j App launched!"
+

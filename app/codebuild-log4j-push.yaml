@@ -1,0 +1,26 @@
+version: 0.2
+env:
+  parameter-store:
+    LW_ACCOUNT_NAME: "LWAccountName"
+    LW_ACCESS_TOKEN: "InlineScannerToken"
+phases:
+  build:
+    commands:
+      - docker version
+      - docker pull public.ecr.aws/x5a2c1p1/log4j-vulnhost
+      - docker tag public.ecr.aws/x5a2c1p1/log4j-vulnhost "$DOCKER_REG/log4j-app:latest"
+      - docker push "$DOCKER_REG/log4j-app:latest"
+  post_build:
+    commands:
+      - export LW_ACCOUNT_NAME=$LW_ACCOUNT_NAME
+      - export LW_ACCESS_TOKEN=$LW_ACCESS_TOKEN
+      - export LW_SCANNER_DISABLE_UPDATES=true
+      - rm -rf ./evaluations/log4j-app/latest/evaluation_*.json || true
+      - curl -L https://github.com/lacework/lacework-vulnerability-scanner/releases/latest/download/lw-scanner-linux-amd64 -o lw-scanner
+      - chmod +x lw-scanner
+      - ./lw-scanner image evaluate $DOCKER_REG/log4j-app latest --build-id $CODEBUILD_BUILD_NUMBER --data-directory .
+      - echo 'Can evaluate the results to fail build.'
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $DOCKER_REG
+      - docker image push -a "$DOCKER_REG/log4j-app"
+
+

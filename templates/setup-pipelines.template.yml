@@ -32,10 +32,15 @@ Resources:
     Properties:
       BucketName: "immers-day-devsecops-eks-artifact-bucket"
 
-  ECRRepository:
+  ECRDemoAppRepository:
     Type: AWS::ECR::Repository
     Properties:
       RepositoryName: "demo-app"
+
+  ECRLog4jAppRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: "log4j-app"
 
   PermissionForEventsToInvokePipeline:
     Type: AWS::IAM::Policy
@@ -277,6 +282,51 @@ Resources:
             Value: latest
       ServiceRole: !Ref CodeBuildServiceRole
 
+  CodeBuildLog4jPushProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: "codebuild-log4j-push.yaml"
+      Environment:
+        ComputeType: "BUILD_GENERAL1_SMALL"
+        Image: "aws/codebuild/standard:5.0"
+        Type: "LINUX_CONTAINER"
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: DOCKER_REG
+            Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
+      Name: !Sub ${AWS::AccountId}-codebuild-log4j-push
+      Description: "CodeBuild Log4j Push to ECR"
+      ServiceRole: !Ref CodeBuildServiceRole
+
+  CodeBuildDeployLog4jProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub ${AWS::AccountId}-codebuild-deploy-log4j-eks
+      Description: "Deploy Log4j to EKS"
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: "codebuild-deploy-log4j.yaml"
+      Environment:
+        ComputeType: "BUILD_GENERAL1_SMALL"
+        Image: "aws/codebuild/standard:5.0"
+        Type: "LINUX_CONTAINER"
+        EnvironmentVariables:
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_REGION
+            Value: !Ref AWS::Region
+          - Name: DOCKER_REG
+            Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
+          - Name: EKS_CLUSTER
+            Value: !Sub "${AWS::AccountId}-eks"
+      ServiceRole: !Ref CodeBuildServiceRole
+
   EKSPipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
@@ -381,6 +431,61 @@ Resources:
                 Provider: CodeBuild
               Configuration:
                 ProjectName: !Ref CodeBuildDeployEcsProject
+              InputArtifacts:
+                - Name: App
+              OutputArtifacts:
+                - Name: DeployOutput
+              RunOrder: 3
+
+  Log4jPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub ${AWS::AccountId}-codepipeline-log4j-eks
+      RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: App
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: S3
+              Configuration:
+                S3Bucket: !Ref S3BucketName
+                S3ObjectKey: !Sub "${S3KeyPrefix}/app/app.zip"
+                PollForSourceChanges: false
+              OutputArtifacts:
+                - Name: App
+              RunOrder: 1
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref CodeBuildLog4jPushProject
+              InputArtifacts:
+                - Name: App
+              OutputArtifacts:
+                - Name: BuildOutput
+              RunOrder: 2
+        - Name: Deploy
+          Actions:
+            - Name: UpdateDeployment
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref CodeBuildDeployLog4jProject
               InputArtifacts:
                 - Name: App
               OutputArtifacts:

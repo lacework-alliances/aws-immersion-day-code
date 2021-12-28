@@ -96,7 +96,6 @@ Resources:
   LaceworkCWSBucket:
     Condition: CreateNewTrail
     Type: 'AWS::S3::Bucket'
-    DeletionPolicy: Retain
     Properties:
       BucketName: !Join
         - ''

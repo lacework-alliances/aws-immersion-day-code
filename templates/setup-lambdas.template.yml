@@ -45,6 +45,7 @@ Resources:
       DestBucket: !Ref 'LambdaZipsBucket'
       SourceBucket: !Ref 'S3BucketName'
       Prefix: !Ref 'S3KeyPrefix'
+      Acl: 'bucket-owner-full-control'
       Objects:
         - '/lambda/resources.zip'
 
@@ -55,6 +56,7 @@ Resources:
       DestBucket: !Ref 'RansomwareBucket'
       SourceBucket: !Ref 'S3BucketName'
       Prefix: !Ref 'S3KeyPrefix'
+      Acl: 'public-read-write'
       Objects:
         - '/app/app.zip'
 
@@ -87,6 +89,7 @@ Resources:
                   - s3:PutObject
                   - s3:DeleteObject
                   - s3:PutObjectTagging
+                  - s3:PutObjectAcl
                 Resource:
                   - !Sub 'arn:${AWS::Partition}:s3:::${LambdaZipsBucket}/${S3KeyPrefix}*'
                   - !Sub 'arn:${AWS::Partition}:s3:::${RansomwareBucket}/${S3KeyPrefix}*'
@@ -106,7 +109,7 @@ Resources:
           import threading
           import boto3
           import cfnresponse
-          def copy_objects(source_bucket, dest_bucket, prefix, objects):
+          def copy_objects(source_bucket, dest_bucket, prefix, objects, acl='bucket-owner-full-control'):
               s3 = boto3.client('s3')
               for o in objects:
                   key = prefix + o
@@ -118,7 +121,7 @@ Resources:
                   print('dest_bucket = %s'%dest_bucket)
                   print('key = %s' %key)
                   s3.copy_object(CopySource=copy_source, Bucket=dest_bucket,
-                        Key=key)
+                        Key=key, ACL=acl)
           def delete_objects(bucket, prefix, objects):
               s3 = boto3.client('s3')
               objects = {'Objects': [{'Key': prefix + o} for o in objects]}
@@ -139,10 +142,11 @@ Resources:
                   dest_bucket = event['ResourceProperties']['DestBucket']
                   prefix = event['ResourceProperties']['Prefix']
                   objects = event['ResourceProperties']['Objects']
+                  acl = event['ResourceProperties']['Acl']
                   if event['RequestType'] == 'Delete':
                       delete_objects(dest_bucket, prefix, objects)
                   else:
-                      copy_objects(source_bucket, dest_bucket, prefix, objects)
+                      copy_objects(source_bucket, dest_bucket, prefix, objects,acl)
               except Exception as e:
                   logging.error('Exception: %s' % e, exc_info=True)
                   status = cfnresponse.FAILED
