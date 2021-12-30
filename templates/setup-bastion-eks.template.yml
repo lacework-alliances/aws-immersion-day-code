@@ -146,20 +146,29 @@ Resources:
           "keyId": "${LaceworkAccessKeyID}",
           "expiryTime": 86400
           }' | jq -r '.token')
-          # GET AN AGENT TOKEN FROM LACEWORK
+          # GET AN EKS AGENT TOKEN FROM LACEWORK
           eks_agent_token=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/AgentAccessTokens' \
           --header 'Content-Type: application/json' \
           --header "Authorization: Bearer $accesstoken" \
           --data-raw '{
           "tokenEnabled": "1",
-          "tokenAlias": "${AWS::AccountId}-aws-immersion-day-eks-${AWS::StackId}"
+          "tokenAlias": "aws-immersion-day-eks-${AWS::StackId}"
           }' | jq -r '.data.accessToken')
+          # GET AN ECS AGENT TOKEN FROM LACEWORK
           ecs_agent_token=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/AgentAccessTokens' \
           --header 'Content-Type: application/json' \
           --header "Authorization: Bearer $accesstoken" \
           --data-raw '{
           "tokenEnabled": "1",
-          "tokenAlias": "${AWS::AccountId}-aws-immersion-day-ecs-${AWS::StackId}"
+          "tokenAlias": "aws-immersion-day-ecs-${AWS::StackId}"
+          }' | jq -r '.data.accessToken')
+          # GET A EC2 AGENT TOKEN FROM LACEWORK
+          ec2_agent_token=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/AgentAccessTokens' \
+          --header 'Content-Type: application/json' \
+          --header "Authorization: Bearer $accesstoken" \
+          --data-raw '{
+          "tokenEnabled": "1",
+          "tokenAlias": "aws-immersion-day-ec2-${AWS::StackId}"
           }' | jq -r '.data.accessToken')
           # GET AN INLINE SCANNER TOKEN FROM LACEWORK
           inline_scanner_token=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/ContainerRegistries' \
@@ -210,7 +219,12 @@ Resources:
           cat my-lacework-cfg-k8s-agent.yaml
           kubectl apply -f my-lacework-cfg-k8s-agent.yaml
           curl -O https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/manifests/lacework-k8s-agent.yaml
-          kubectl apply -f lacework-cfg-k8s-agent.yaml
+          kubectl apply -f lacework-k8s-agent.yaml
+          # SETUP THE LACEWORK AGENT ON THIS HOST
+          curl -O -sSL https://packages.lacework.net/RPMS/x86_64/lacework-prod.repo
+          mv lacework-prod.repo /etc/yum.repos.d
+          yum install -y lacework
+          echo '{"Tokens": {"Accesstoken": "'$ec2_agent_token'"}, "serverurl": "https://api.lacework.net" }' > /var/lib/lacework/config/config.json
           # CREATE A K8S SECRET FOR ECR REPO AUTHENTICATION
           kubectl create secret docker-registry regcred \
             --docker-server=${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com \
@@ -223,8 +237,11 @@ Resources:
           kubectl patch configmap/aws-auth -n kube-system --patch "$(cat /tmp/aws-auth-patch.yml)"
           kubectl get configmap aws-auth -o yaml -n kube-system
           # SIMULATE A RANSOMWARE SCAN
-          aws s3api list-buckets --region ${AWS::Region} | at now +24 hours
-          aws s3 cp s3://ransomware-target-bucket/awsimmersionday/app/app.zip s3://ransomware-target-bucket/awsimmersionday/app/app.zip --sse aws:kms --sse-kms-key-id arn:aws:kms:us-west-2:911290716430:key/e1583228-d021-4f40-b83b-52fd722074e9 | at now +25 hours
+          curl -O https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/scripts/badguys.sh
+          chmod a+x badguys.sh
+          crontab -l > cron_bkp
+          echo "0 10 * * * sudo /badguys.sh >/dev/null 2>&1" >> cron_bkp
+          crontab cron_bkp
           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource BastionASG --region ${AWS::Region}
   BastionProfile:
     Type: AWS::IAM::InstanceProfile

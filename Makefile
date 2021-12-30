@@ -6,6 +6,8 @@ APP_PREFIX := app/
 APP_DIR := app
 MANIFEST_DIR := manifests
 MANIFEST_PREFIX := manifests
+SCRIPTS_DIR := scripts
+SCRIPTS_PREFIX := scripts
 CFT_PREFIX := templates
 CFT_DIR := templates
 
@@ -34,6 +36,7 @@ $(s3_buckets):
 	$(info [+] Uploading artifacts to '$@' bucket)
 	@$(MAKE) _upload_templates BUCKET_NAME=$@
 	@$(MAKE) _upload_manifests BUCKET_NAME=$@
+	@$(MAKE) _upload_scripts BUCKET_NAME=$@
 	@$(MAKE) _upload_lambda_zip BUCKET_NAME=$@
 	@$(MAKE) _upload_app_zip BUCKET_NAME=$@
 
@@ -44,6 +47,10 @@ _upload_templates:
 _upload_manifests:
 	$(info [+] Uploading manifests to $(BUCKET_NAME) bucket)
 	@aws --profile $(PROFILE) --region $(REGION) s3 cp $(MANIFEST_DIR)/ s3://$(BUCKET_NAME)/$(KEY_PREFIX)/$(MANIFEST_PREFIX) --recursive --exclude "*" --include "*.yaml" --include "*.yml" --acl public-read
+
+_upload_scripts:
+	$(info [+] Uploading scripts to $(BUCKET_NAME) bucket)
+	@aws --profile $(PROFILE) --region $(REGION) s3 cp $(SCRIPTS_DIR)/ s3://$(BUCKET_NAME)/$(KEY_PREFIX)/$(SCRIPTS_PREFIX) --recursive --exclude "*" --include "*.sh" --acl public-read
 
 _upload_app_zip:
 	$(info [+] Uploading app to $(BUCKET_NAME) bucket)
