@@ -15,6 +15,8 @@ Some of the instruction modules use an NPM demo app. The application code is loc
 ### Build and Run Docker Image Locally
 
 ```
+$ cd app
+$ aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
 $ docker build -t demo-app . 
 $ docker run -p 443:443 -p 80:80 docker.io/library/demo-app
 ```

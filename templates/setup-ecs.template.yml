@@ -149,7 +149,7 @@ Resources:
           Command:
             - "sh"
             - "-c"
-            - "/var/lib/lacework-backup/lacework-sidecar.sh && /opt/bitnami/node/bin/node"
+            - "/var/lib/lacework-backup/lacework-sidecar.sh && nginx -g 'daemon off;'"
           Environment:
             - Name: "LaceworkAccessToken"
               Value: "{{resolve:ssm:ECSAgentToken}}"

@@ -111,7 +111,10 @@ Resources:
 
   Pipelines:
     Type: AWS::CloudFormation::Stack
-    DependsOn: LambdaFunctions
+    DependsOn:
+      - LambdaFunctions
+      - Ecs
+      - BastionEks
     Properties:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-pipelines.template.yml

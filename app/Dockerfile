@@ -9,7 +9,7 @@ RUN npm install -g @angular/cli
 
 RUN ng build --configuration production
 
-FROM public.ecr.aws/nginx/nginx:1.20-alpine
+FROM public.ecr.aws/nginx/nginx:1.21-alpine
 
 RUN apk update
 RUN apk add openssl
