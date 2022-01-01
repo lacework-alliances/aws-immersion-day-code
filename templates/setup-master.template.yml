@@ -101,6 +101,7 @@ Resources:
     DependsOn:
       - BaseVpc
       - BastionEks
+      - Pipelines
     Properties:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-ecs.template.yml
@@ -113,7 +114,6 @@ Resources:
     Type: AWS::CloudFormation::Stack
     DependsOn:
       - LambdaFunctions
-      - Ecs
       - BastionEks
     Properties:
       TemplateURL: >-
