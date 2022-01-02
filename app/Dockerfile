@@ -1,13 +1,12 @@
-FROM public.ecr.aws/bitnami/node:latest
+FROM public.ecr.aws/bitnami/node:14.18.2
 
 WORKDIR /usr/src/app
 
 COPY . .
 
 RUN npm install
-RUN npm install -g @angular/cli
 
-RUN ng build --configuration production
+RUN npm run build --prod
 
 FROM public.ecr.aws/nginx/nginx:1.21-alpine
 

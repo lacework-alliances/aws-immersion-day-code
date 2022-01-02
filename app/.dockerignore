@@ -1,6 +1,5 @@
 dist
 .idea
-node_modules
 .git
 .gitignore
 task-definition-ecs.json
@@ -8,3 +7,6 @@ deploy-ecs.sh
 codebuild-deploy-ecs.yaml
 codebuild-deploy-eks.yaml
 codebuild-scan-push.yaml
+codebuild-log4j-push.yaml
+codebuild-deploy-log4j.yaml
+
