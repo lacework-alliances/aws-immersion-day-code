@@ -13,6 +13,8 @@ phases:
       - export LW_ACCOUNT_NAME=$LW_ACCOUNT_NAME
       - export LW_ACCESS_TOKEN=$LW_ACCESS_TOKEN
       - export LW_SCANNER_DISABLE_UPDATES=true
+      - export LW_SCANNER_SAVE_RESULTS=true
+      - export LW_SCANNER_SCAN_LIBRARY_PACKAGES=true
       - rm -rf ./evaluations/$IMAGE_NAME/$CODEBUILD_BUILD_NUMBER/evaluation_*.json || true
       - curl -L https://github.com/lacework/lacework-vulnerability-scanner/releases/latest/download/lw-scanner-linux-amd64 -o lw-scanner
       - chmod +x lw-scanner

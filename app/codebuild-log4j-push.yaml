@@ -9,6 +9,8 @@ phases:
       - export LW_ACCOUNT_NAME=$LW_ACCOUNT_NAME
       - export LW_ACCESS_TOKEN=$LW_ACCESS_TOKEN
       - export LW_SCANNER_DISABLE_UPDATES=true
+      - export LW_SCANNER_SAVE_RESULTS=true
+      - export LW_SCANNER_SCAN_LIBRARY_PACKAGES=true
       - docker version
       - docker pull public.ecr.aws/x5a2c1p1/log4j-vulnhost
       - docker tag public.ecr.aws/x5a2c1p1/log4j-vulnhost "$DOCKER_REG/log4j-app:latest"
