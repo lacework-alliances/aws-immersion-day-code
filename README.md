@@ -1,6 +1,6 @@
 # AWS Immersion Day with Lacework Application and Infrastructure Code
 
-This repository contains the application and infrastructure code for AWS Immersion Day with Lacework. The application and infrastructure code support the following instruction modules.
+This repository contains the application and infrastructure code for [AWS Immersion Day with Lacework](https://lacework-alliances.github.io/aws-immersion-day-with-lacework/). The application and infrastructure code support the following instruction modules.
 
 * Advanced Cloud Security Posture Management (CSPM+)
 * Vulnerability & Workload Protection (DevSecOps) with CodePipeline, CodeBuild, ECR & EKS
@@ -63,11 +63,6 @@ The AWS infrastructure that is required for the instruction modules are provisio
 * setup-pipelines.template.yml - Creates the CodePipeline pipelines for EKS and EKS. Creates the CodeBuild projects for building and deploying the demo app. Creates the ECR and S3 resources.
 * setup-vpc.template.yml - Creates the main VPC for all the infrastructure.
 
-### K8s Manifests
-
-
-### Lambda Function
-
 
 ### Deploy the Infrastructure
 
@@ -77,6 +72,8 @@ Use the following CloudFormation Launch button to launch the master template in 
 * LaceworkAccessKeyID - Lacework API Access Key ID contains alphanumeric characters and symbols only.
 * LaceworkSecretKey - Lacework API Secret Key contains alphanumeric characters and symbols only.
 * KeyName - The EC2 Key Pair to allow SSH access to the bastion host.
+
+To generate a Lacework API Access Key/Secret, navigate to **Settings > API Keys** in the Lacework console. Click **+ Create New**. Enter a name for the key and an optional description and click **Save**. To get the secret key, download the generated API key file and open it in an editor.
 
 The CloudFormation deployment process will take 30-60 minutes.
 <a href="https://console.aws.amazon.com/cloudformation/home?#/stacks/create/review?templateURL=https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-master.template.yml"><img src="https://dmhnzl5mp9mj6.cloudfront.net/application-management_awsblog/images/cloudformation-launch-stack.png"></img></a>
