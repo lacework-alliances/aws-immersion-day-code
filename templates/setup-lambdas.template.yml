@@ -30,13 +30,13 @@ Resources:
   RansomwareBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: "ransomware-target-bucket"
+      BucketName: !Sub "${AWS::AccountId}-ransomware-target-bucket"
       AccessControl: PublicReadWrite
 
   LambdaZipsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: "immers-day-devsecops-eks-lambda-zips-bucket"
+      BucketName: !Sub "${AWS::AccountId}-immers-day-devsecops-eks-lambda-zips-bucket"
 
   CopyLambdaZips:
     Type: Custom::CopyLambdaZips
@@ -167,7 +167,7 @@ Resources:
       Timeout: 900
       Environment:
         Variables:
-          artifact_bucket: "immers-day-devsecops-eks-artifact-bucket"
+          artifact_bucket: !Sub "${AWS::AccountId}-immers-day-devsecops-eks-artifact-bucket"
       Role: !GetAtt ResourcesFunctionRole.Arn
 
   ResourcesFunctionRole:

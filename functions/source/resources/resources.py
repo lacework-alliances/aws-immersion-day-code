@@ -70,12 +70,17 @@ def delete(event, context):
     logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_bucket_exception))
 
   try:
-    logger.info("Deleting repository")
+    logger.info("Deleting repositories")
     ecr_client = session.client("ecr")
     aws_account_id = context.invoked_function_arn.split(":")[4]
     logger.info(ecr_client.delete_repository(
       registryId=aws_account_id,
       repositoryName="demo-app",
+      force=True
+    ))
+    logger.info(ecr_client.delete_repository(
+      registryId=aws_account_id,
+      repositoryName="log4j-app",
       force=True
     ))
   except Exception as delete_repo_exception:
