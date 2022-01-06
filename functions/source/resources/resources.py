@@ -59,15 +59,24 @@ def create(event, context):
 def delete(event, context):
   logger.info("resources.delete called.")
 
+  s3 = boto3.resource('s3')
+  try:
+    logger.info("Deleting lacework s3 bucket")
+    lacework_bucket_name = os.environ['lacework_bucket']
+    lacework_bucket = s3.Bucket(lacework_bucket_name)
+    lacework_bucket.objects.delete()
+    logger.info(lacework_bucket.delete())
+  except Exception as delete_lacework_bucket_exception:
+    logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_lacework_bucket_exception))
+
   try:
     logger.info("Deleting artifact s3 bucket")
-    bucket = os.environ['artifact_bucket']
-    s3 = boto3.resource('s3')
-    bucket = s3.Bucket(bucket)
-    bucket.objects.delete()
-    logger.info(bucket.delete())
-  except Exception as delete_bucket_exception:
-    logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_bucket_exception))
+    artifact_bucket_name = os.environ['artifact_bucket']
+    artifact_bucket = s3.Bucket(artifact_bucket_name)
+    artifact_bucket.objects.delete()
+    logger.info(artifact_bucket.delete())
+  except Exception as delete_artifact_bucket_exception:
+    logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_artifact_bucket_exception))
 
   try:
     logger.info("Deleting repositories")
@@ -142,7 +151,6 @@ def delete(event, context):
     logger.warning("Problem occurred while deleting cluster: {}".format(delete_stack_exception))
 
   send_cfn_response(event, context, SUCCESS, {})
-
 
 
 def send_cfn_response(event, context, response_status, response_data, physical_resource_id=None, no_echo=False,

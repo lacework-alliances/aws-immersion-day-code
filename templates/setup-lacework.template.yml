@@ -97,10 +97,7 @@ Resources:
     Condition: CreateNewTrail
     Type: 'AWS::S3::Bucket'
     Properties:
-      BucketName: !Join
-        - ''
-        - - !Ref ResourceNamePrefix
-          - '-laceworkcws-3c86'
+      BucketName: !Sub "${AWS::AccountId}-laceworkcws-${ResourceNamePrefix}"
   LaceworkCWSBucketPolicy:
     Condition: CreateNewTrail
     Type: 'AWS::S3::BucketPolicy'

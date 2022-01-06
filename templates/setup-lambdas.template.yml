@@ -6,15 +6,24 @@ Metadata:
       - Label:
           default: "Basic Configuration"
         Parameters:
+          - LaceworkAccountName
           - S3BucketName
           - S3KeyPrefix
     ParameterLabels:
+      LaceworkAccountName:
+        default: Lacework Account Name
       S3BucketName:
         default: CloudFormation S3 Bucket
       S3KeyPrefix:
         default: CloudFormation S3 Key Prefix
 
 Parameters:
+  LaceworkAccountName:
+    Type: String
+    Description: Your Lacework account name. ie. <account name>.lacework.net
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$'
+    ConstraintDescription: Invalid Lacework account name. Account name may contain alphanumeric characters and dashes only.
   S3BucketName:
     Type: String
     Default: lacework-alliances
@@ -168,6 +177,7 @@ Resources:
       Environment:
         Variables:
           artifact_bucket: !Sub "${AWS::AccountId}-immers-day-devsecops-eks-artifact-bucket"
+          lacework_bucket: !Sub "${AWS::AccountId}-laceworkcws-${LaceworkAccountName}"
       Role: !GetAtt ResourcesFunctionRole.Arn
 
   ResourcesFunctionRole:

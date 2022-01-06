@@ -30,7 +30,7 @@ Resources:
   ArtifactBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: "immers-day-devsecops-eks-artifact-bucket"
+      BucketName: !Sub "${AWS::AccountId}-immers-day-devsecops-eks-artifact-bucket"
 
   ECRDemoAppRepository:
     Type: AWS::ECR::Repository

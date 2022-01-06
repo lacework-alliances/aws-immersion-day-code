@@ -28,18 +28,21 @@ Metadata:
 
 Parameters:
   LaceworkAccountName:
+    Default: lwintawsimmersionday
     Type: String
     Description: Your Lacework account name. ie. <account name>.lacework.net
     MinLength: '1'
     AllowedPattern: '^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$'
     ConstraintDescription: Invalid Lacework account name. Account name may contain alphanumeric characters and dashes only.
   LaceworkAccessKeyID:
+    Default: LWINTAWS_62F9A532396AA51E103F2DACEC9A1AEED71ACAC52E08BD3
     Type: String
     MinLength: '1'
     AllowedPattern: '^[a-zA-Z0-9_]*$'
     ConstraintDescription: Lacework API Access Key ID contains alphanumeric characters and symbols only.
     Description: Lacework API Secret Key ID. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
   LaceworkSecretKey:
+    Default: _df233e499ee6c871b0edd72853507be8
     Type: String
     NoEcho: true
     MinLength: '1'
@@ -47,6 +50,7 @@ Parameters:
     ConstraintDescription: Lacework API Secret Key contains alphanumeric characters and symbols only.
     Description: Lacework API Secret Key. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
   KeyName:
+    Default: ee-default-keypair
     Description: The EC2 Key Pair to allow SSH access to the bastion host.
     Type: AWS::EC2::KeyPair::KeyName
 
@@ -128,6 +132,7 @@ Resources:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-lambdas.template.yml
       Parameters:
+        LaceworkAccountName: !Ref LaceworkAccountName
         S3BucketName: !Ref S3BucketName
         S3KeyPrefix: !Ref S3KeyPrefix
 
