@@ -6,20 +6,12 @@ Metadata:
       - Label:
           default: "Basic Configuration"
         Parameters:
-          - S3BucketName
           - S3KeyPrefix
     ParameterLabels:
-      S3BucketName:
-        default: CloudFormation S3 Bucket
       S3KeyPrefix:
         default: CloudFormation S3 Key Prefix
 
 Parameters:
-  S3BucketName:
-    Type: String
-    Default: lacework-alliances
-    MinLength: '1'
-    Description: "S3 bucket for assets. Use this if you want to customize your deployment. The bucket name can include numbers, lowercase letters, uppercase letters, and hyphens, but it cannot start or end with hyphens (-)."
   S3KeyPrefix:
     Type: String
     Default: awsimmersionday
@@ -345,7 +337,7 @@ Resources:
                 Version: 1
                 Provider: S3
               Configuration:
-                S3Bucket: !Ref S3BucketName
+                S3Bucket: !Sub "${AWS::AccountId}-app-bucket"
                 S3ObjectKey: !Sub "${S3KeyPrefix}/app/app.zip"
                 PollForSourceChanges: false
               OutputArtifacts:
@@ -400,7 +392,7 @@ Resources:
                 Version: 1
                 Provider: S3
               Configuration:
-                S3Bucket: !Ref S3BucketName
+                S3Bucket: !Sub "${AWS::AccountId}-app-bucket"
                 S3ObjectKey: !Sub "${S3KeyPrefix}/app/app.zip"
                 PollForSourceChanges: false
               OutputArtifacts:
@@ -455,7 +447,7 @@ Resources:
                 Version: 1
                 Provider: S3
               Configuration:
-                S3Bucket: !Ref S3BucketName
+                S3Bucket: !Sub "${AWS::AccountId}-app-bucket"
                 S3ObjectKey: !Sub "${S3KeyPrefix}/app/app.zip"
                 PollForSourceChanges: false
               OutputArtifacts:

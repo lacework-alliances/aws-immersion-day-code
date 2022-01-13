@@ -114,18 +114,6 @@ Resources:
         PublicSubnetA: !GetAtt BaseVpc.Outputs.PublicSubnetA
         PublicSubnetB: !GetAtt BaseVpc.Outputs.PublicSubnetB
 
-  Pipelines:
-    Type: AWS::CloudFormation::Stack
-    DependsOn:
-      - LambdaFunctions
-      - BastionEks
-    Properties:
-      TemplateURL: >-
-        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-pipelines.template.yml
-      Parameters:
-        S3BucketName: !Ref S3BucketName
-        S3KeyPrefix: !Ref S3KeyPrefix
-
   LambdaFunctions:
     Type: AWS::CloudFormation::Stack
     Properties:
@@ -135,6 +123,19 @@ Resources:
         LaceworkAccountName: !Ref LaceworkAccountName
         S3BucketName: !Ref S3BucketName
         S3KeyPrefix: !Ref S3KeyPrefix
+
+  Pipelines:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - LambdaFunctions
+      - BastionEks
+    Properties:
+      TemplateURL: >-
+        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-pipelines.template.yml
+      Parameters:
+        S3KeyPrefix: !Ref S3KeyPrefix
+
+
 
 
 

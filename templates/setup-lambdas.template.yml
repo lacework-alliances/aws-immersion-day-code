@@ -42,6 +42,13 @@ Resources:
       BucketName: !Sub "${AWS::AccountId}-ransomware-target-bucket"
       AccessControl: PublicReadWrite
 
+  AppBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::AccountId}-app-bucket"
+      VersioningConfiguration:
+        Status: Enabled
+
   LambdaZipsBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -59,13 +66,24 @@ Resources:
         - '/lambda/resources.zip'
 
   CopyRansomwareZips:
-    Type: Custom::CopyLambdaZips
+    Type: Custom::CopyRansomwareZips
     Properties:
       ServiceToken: !GetAtt 'CopyZipsFunction.Arn'
       DestBucket: !Ref 'RansomwareBucket'
       SourceBucket: !Ref 'S3BucketName'
       Prefix: !Ref 'S3KeyPrefix'
       Acl: 'public-read-write'
+      Objects:
+        - '/app/app.zip'
+
+  CopyAppZips:
+    Type: Custom::CopyAppZips
+    Properties:
+      ServiceToken: !GetAtt 'CopyZipsFunction.Arn'
+      DestBucket: !Ref 'AppBucket'
+      SourceBucket: !Ref 'S3BucketName'
+      Prefix: !Ref 'S3KeyPrefix'
+      Acl: 'bucket-owner-full-control'
       Objects:
         - '/app/app.zip'
 
@@ -102,6 +120,7 @@ Resources:
                 Resource:
                   - !Sub 'arn:${AWS::Partition}:s3:::${LambdaZipsBucket}/${S3KeyPrefix}*'
                   - !Sub 'arn:${AWS::Partition}:s3:::${RansomwareBucket}/${S3KeyPrefix}*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${AppBucket}/${S3KeyPrefix}*'
 
   CopyZipsFunction:
     Type: AWS::Lambda::Function
@@ -292,3 +311,5 @@ Outputs:
     Value: !Ref RansomwareBucket
   LambdaZipsBucket:
     Value: !Ref LambdaZipsBucket
+  AppBucket:
+    Value: !Ref AppBucket
