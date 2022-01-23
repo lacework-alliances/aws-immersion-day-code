@@ -54,7 +54,7 @@ _upload_scripts:
 
 _upload_app_zip:
 	$(info [+] Uploading app to $(BUCKET_NAME) bucket)
-	(cd app && zip -r app.zip . -x "*.DS_Store*" "*.git*" "build*" "package-lock.json" "Makefile" "requirements.txt" "node_modules/*")
+	(cd app && zip -r app.zip . -x "*.DS_Store*" "*.git*" "build*" "Makefile" "requirements.txt" "node_modules/*")
 	@aws --profile $(PROFILE) --region $(REGION) s3 cp app/app.zip s3://$(BUCKET_NAME)/$(KEY_PREFIX)/$(APP_PREFIX) --acl public-read
 	rm -f app/app.zip
 
