@@ -214,12 +214,11 @@ Resources:
           }')
           echo $ecr_scanner_response
           # SETUP THE LACEWORK AGENT ON THE EKS CLUSTER
-          curl -O https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/manifests/lacework-cfg-k8s-agent.yaml
-          sed "s|accessToken|$eks_agent_token|g" lacework-cfg-k8s-agent.yaml > my-lacework-cfg-k8s-agent.yaml
-          cat my-lacework-cfg-k8s-agent.yaml
-          kubectl apply -f my-lacework-cfg-k8s-agent.yaml
-          curl -O https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/manifests/lacework-k8s-agent.yaml
-          kubectl apply -f lacework-k8s-agent.yaml
+          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          chmod 700 get_helm.sh
+          ./get_helm.sh
+          helm repo add lacework https://lacework.github.io/helm-charts/
+          helm upgrade --install --namespace lacework --create-namespace --set laceworkConfig.accessToken=$eks_agent_token lacework-agent lacework/lacework-agent
           # SETUP THE LACEWORK AGENT ON THIS HOST
           curl -O -sSL https://packages.lacework.net/RPMS/x86_64/lacework-prod.repo
           mv lacework-prod.repo /etc/yum.repos.d
