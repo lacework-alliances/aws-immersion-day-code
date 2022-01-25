@@ -128,16 +128,6 @@ Resources:
           set -o xtrace
           pwd
           yum install -y python3 python3-pip tar openssh-server vim-minimal bash-completion jq at && yum clean all && pip3 install awscli
-          curl -o /usr/local/bin/kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.20.4/2021-04-12/bin/linux/amd64/kubectl && \
-              chmod +x /usr/local/bin/kubectl && \
-              curl -o /usr/local/bin/aws-iam-authenticator https://amazon-eks.s3.us-west-2.amazonaws.com/1.21.2/2021-07-05/bin/linux/amd64/aws-iam-authenticator && \
-              chmod +x /usr/local/bin/aws-iam-authenticator && \
-              curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp && \
-              sudo mv /tmp/eksctl /usr/local/bin
-          # CREATE AND WAIT FOR THE EKC CLUSTER
-          eksctl create cluster --tags KubernetesCluster=${AWS::AccountId}-eks --name ${AWS::AccountId}-eks --region ${AWS::Region} --with-oidc --ssh-access --ssh-public-key ${KeyName}
-          aws eks --region ${AWS::Region} update-kubeconfig --name ${AWS::AccountId}-eks
-          timeout 10m bash -c -- 'while [ -z "$status" ] || [ "$status" != "\"ACTIVE\"" ]; do status=$(aws eks --region ${AWS::Region} describe-cluster --name ${AWS::AccountId}-eks --query cluster.status);echo $status; sleep 2; done'
           # GET AN ACCESS TOKEN FROM LACEWORK
           accesstoken=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/access/tokens' \
           --header 'Content-Type: application/json' \
@@ -170,6 +160,16 @@ Resources:
           "tokenEnabled": "1",
           "tokenAlias": "aws-immersion-day-ec2-${AWS::StackId}"
           }' | jq -r '.data.accessToken')
+          # CREATE AND WAIT FOR THE EKC CLUSTER
+          curl -o /usr/local/bin/kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.20.4/2021-04-12/bin/linux/amd64/kubectl && \
+              chmod +x /usr/local/bin/kubectl && \
+              curl -o /usr/local/bin/aws-iam-authenticator https://amazon-eks.s3.us-west-2.amazonaws.com/1.21.2/2021-07-05/bin/linux/amd64/aws-iam-authenticator && \
+              chmod +x /usr/local/bin/aws-iam-authenticator && \
+              curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp && \
+              sudo mv /tmp/eksctl /usr/local/bin
+          eksctl create cluster --name ${AWS::AccountId}-eks --region ${AWS::Region} --with-oidc --ssh-access --ssh-public-key ${KeyName}
+          aws eks --region ${AWS::Region} update-kubeconfig --name ${AWS::AccountId}-eks
+          timeout 10m bash -c -- 'while [ -z "$status" ] || [ "$status" != "\"ACTIVE\"" ]; do status=$(aws eks --region ${AWS::Region} describe-cluster --name ${AWS::AccountId}-eks --query cluster.status);echo $status; sleep 2; done'
           # GET AN INLINE SCANNER TOKEN FROM LACEWORK
           inline_scanner_token=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/ContainerRegistries' \
           --header 'Content-Type: application/json' \
@@ -184,7 +184,7 @@ Resources:
           }
           }' | jq -r '.data.serverToken.serverToken')
           echo $inline_scanner_token
-          # STORE THE LACEWORK TOKENS IN SSM
+          # STORE THE SCANNER AND ECS LACEWORK TOKENS IN SSM
           aws ssm put-parameter --region ${AWS::Region} --name "LWAccountName" --type "String" --value ${LaceworkAccountName} --overwrite
           aws ssm put-parameter --region ${AWS::Region} --name "AccessToken" --type "String" --value $accesstoken --overwrite
           aws ssm put-parameter --region ${AWS::Region} --name "InlineScannerToken" --type "String" --value $inline_scanner_token --overwrite
