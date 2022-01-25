@@ -135,7 +135,7 @@ Resources:
               curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp && \
               sudo mv /tmp/eksctl /usr/local/bin
           # CREATE AND WAIT FOR THE EKC CLUSTER
-          eksctl create cluster --name ${AWS::AccountId}-eks --region ${AWS::Region} --with-oidc --ssh-access --ssh-public-key ${KeyName}
+          eksctl create cluster --tags KubernetesCluster=${AWS::AccountId}-eks --name ${AWS::AccountId}-eks --region ${AWS::Region} --with-oidc --ssh-access --ssh-public-key ${KeyName}
           aws eks --region ${AWS::Region} update-kubeconfig --name ${AWS::AccountId}-eks
           timeout 10m bash -c -- 'while [ -z "$status" ] || [ "$status" != "\"ACTIVE\"" ]; do status=$(aws eks --region ${AWS::Region} describe-cluster --name ${AWS::AccountId}-eks --query cluster.status);echo $status; sleep 2; done'
           # GET AN ACCESS TOKEN FROM LACEWORK
@@ -218,7 +218,7 @@ Resources:
           chmod 700 get_helm.sh
           ./get_helm.sh
           helm repo add lacework https://lacework.github.io/helm-charts/
-          helm upgrade --install --namespace lacework --create-namespace --set laceworkConfig.accessToken=$eks_agent_token lacework-agent lacework/lacework-agent
+          helm upgrade --install --namespace lacework --create-namespace --set laceworkConfig.accessToken=$eks_agent_token --set laceworkConfig.kubernetesCluster=${AWS::AccountId}-eks --set laceworkConfig.env=${AWS::AccountId}-eks lacework-agent lacework/lacework-agent
           # SETUP THE LACEWORK AGENT ON THIS HOST
           curl -O -sSL https://packages.lacework.net/RPMS/x86_64/lacework-prod.repo
           mv lacework-prod.repo /etc/yum.repos.d
@@ -239,7 +239,7 @@ Resources:
           curl -O https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/scripts/badguys.sh
           chmod a+x badguys.sh
           crontab -l > cron_bkp
-          echo "*/30 * * * * /badguys.sh ${AWS::Region} ${AWS::AccountId} >/dev/null 2>&1" >> cron_bkp
+          echo "*/15 * * * * /badguys.sh ${AWS::Region} ${AWS::AccountId} >/dev/null 2>&1" >> cron_bkp
           crontab cron_bkp
           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource BastionASG --region ${AWS::Region}
   BastionProfile:
