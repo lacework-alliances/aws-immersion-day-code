@@ -100,6 +100,17 @@ Resources:
         ExternalID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
         CreateTrail: "Yes"
 
+  LaceworkEKSAudit:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - BastionEks
+    Properties:
+      TemplateURL: >-
+        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-lacework-eks-audit.template.yml
+      Parameters:
+        ResourceNamePrefix: !Ref LaceworkAccountName
+        ExternalID: !Select [ 4, !Split [ '-', !Select [ 2, !Split [ '/', !Ref AWS::StackId ] ] ] ]
+
   Ecs:
     Type: AWS::CloudFormation::Stack
     DependsOn:

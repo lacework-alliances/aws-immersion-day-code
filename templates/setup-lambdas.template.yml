@@ -197,6 +197,9 @@ Resources:
         Variables:
           artifact_bucket: !Sub "${AWS::AccountId}-immers-day-devsecops-eks-artifact-bucket"
           lacework_bucket: !Sub "${AWS::AccountId}-laceworkcws-${LaceworkAccountName}"
+          lambda_bucket: !Sub "${AWS::AccountId}-immers-day-devsecops-eks-lambda-zips-bucket"
+          ransomware_bucket: !Sub "${AWS::AccountId}-ransomware-target-bucket"
+          app_bucket: !Sub "${AWS::AccountId}-app-bucket"
       Role: !GetAtt ResourcesFunctionRole.Arn
 
   ResourcesFunctionRole:

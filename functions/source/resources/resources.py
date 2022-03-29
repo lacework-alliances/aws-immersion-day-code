@@ -61,10 +61,41 @@ def delete(event, context):
 
   s3 = boto3.resource('s3')
   try:
+    logger.info("Deleting ransomware s3 bucket")
+    ransomware_bucket_name = os.environ['ransomware_bucket']
+    ransomware_bucket = s3.Bucket(ransomware_bucket_name)
+    ransomware_bucket.objects.delete()
+    ransomware_bucket.object_versions.delete()
+    logger.info(ransomware_bucket.delete())
+  except Exception as delete_ransomware_bucket_exception:
+    logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_ransomware_bucket_exception))
+
+  try:
+    logger.info("Deleting lambda s3 bucket")
+    lambda_bucket_name = os.environ['lambda_bucket']
+    lambda_bucket = s3.Bucket(lambda_bucket_name)
+    lambda_bucket.objects.delete()
+    lambda_bucket.object_versions.delete()
+    logger.info(lambda_bucket.delete())
+  except Exception as delete_lambda_bucket_exception:
+    logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_lambda_bucket_exception))
+
+  try:
+    logger.info("Deleting app s3 bucket")
+    app_bucket_name = os.environ['app_bucket']
+    app_bucket = s3.Bucket(app_bucket_name)
+    app_bucket.objects.delete()
+    app_bucket.object_versions.delete()
+    logger.info(app_bucket.delete())
+  except Exception as delete_app_bucket_exception:
+    logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_app_bucket_exception))
+
+  try:
     logger.info("Deleting lacework s3 bucket")
     lacework_bucket_name = os.environ['lacework_bucket']
     lacework_bucket = s3.Bucket(lacework_bucket_name)
     lacework_bucket.objects.delete()
+    lacework_bucket.object_versions.delete()
     logger.info(lacework_bucket.delete())
   except Exception as delete_lacework_bucket_exception:
     logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_lacework_bucket_exception))
@@ -74,6 +105,7 @@ def delete(event, context):
     artifact_bucket_name = os.environ['artifact_bucket']
     artifact_bucket = s3.Bucket(artifact_bucket_name)
     artifact_bucket.objects.delete()
+    artifact_bucket.object_versions.delete()
     logger.info(artifact_bucket.delete())
   except Exception as delete_artifact_bucket_exception:
     logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_artifact_bucket_exception))
