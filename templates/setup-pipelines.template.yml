@@ -244,7 +244,7 @@ Resources:
           - Name: DOCKER_REG
             Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
           - Name: EKS_CLUSTER
-            Value: !Sub "${AWS::AccountId}-eks"
+            Value: !Sub "${AWS::AccountId}-${AWS::Region}-eks"
           - Name: IMAGE_NAME
             Value: demo-app
           - Name: IMAGE_TAG
@@ -316,7 +316,7 @@ Resources:
           - Name: DOCKER_REG
             Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
           - Name: EKS_CLUSTER
-            Value: !Sub "${AWS::AccountId}-eks"
+            Value: !Sub "${AWS::AccountId}-${AWS::Region}-eks"
       ServiceRole: !Ref CodeBuildServiceRole
 
   EKSPipeline:

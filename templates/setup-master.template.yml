@@ -28,21 +28,21 @@ Metadata:
 
 Parameters:
   LaceworkAccountName:
-    Default: lwintawsimmersionday
+    Default: laceworkshop
     Type: String
     Description: Your Lacework account name. ie. <account name>.lacework.net
     MinLength: '1'
     AllowedPattern: '^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$'
     ConstraintDescription: Invalid Lacework account name. Account name may contain alphanumeric characters and dashes only.
   LaceworkAccessKeyID:
-    Default: LWINTAWS_62F9A532396AA51E103F2DACEC9A1AEED71ACAC52E08BD3
+    Default: LACEWORK_EA14D831DCC8255D89869D62D323FD0CC60263DED268DFE
     Type: String
     MinLength: '1'
     AllowedPattern: '^[a-zA-Z0-9_]*$'
     ConstraintDescription: Lacework API Access Key ID contains alphanumeric characters and symbols only.
     Description: Lacework API Secret Key ID. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
   LaceworkSecretKey:
-    Default: _df233e499ee6c871b0edd72853507be8
+    Default: _ee5d74f7337b852e9b6b7da637bff89b
     Type: String
     NoEcho: true
     MinLength: '1'
@@ -69,13 +69,16 @@ Parameters:
 Resources:
   BaseVpc:
     Type: AWS::CloudFormation::Stack
+    DependsOn: LambdaFunctions
     Properties:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-vpc.template.yml
 
   BastionEks:
     Type: AWS::CloudFormation::Stack
-    DependsOn: BaseVpc
+    DependsOn:
+      - BaseVpc
+      - LambdaFunctions
     Properties:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-bastion-eks.template.yml
@@ -92,6 +95,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     DependsOn:
       - BastionEks
+      - LambdaFunctions
     Properties:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-lacework.template.yml
@@ -104,6 +108,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     DependsOn:
       - BastionEks
+      - LambdaFunctions
     Properties:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-lacework-eks-audit.template.yml
@@ -117,6 +122,7 @@ Resources:
       - BaseVpc
       - BastionEks
       - Pipelines
+      - LambdaFunctions
     Properties:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-ecs.template.yml

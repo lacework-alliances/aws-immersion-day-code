@@ -61,8 +61,8 @@ def delete(event, context):
 
   s3 = boto3.resource('s3')
   try:
-    logger.info("Deleting ransomware s3 bucket")
     ransomware_bucket_name = os.environ['ransomware_bucket']
+    logger.info("Deleting ransomware s3 bucket {}".format(ransomware_bucket_name))
     ransomware_bucket = s3.Bucket(ransomware_bucket_name)
     ransomware_bucket.objects.delete()
     ransomware_bucket.object_versions.delete()
@@ -71,8 +71,8 @@ def delete(event, context):
     logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_ransomware_bucket_exception))
 
   try:
-    logger.info("Deleting lambda s3 bucket")
     lambda_bucket_name = os.environ['lambda_bucket']
+    logger.info("Deleting lambda s3 bucket {}".format(lambda_bucket_name))
     lambda_bucket = s3.Bucket(lambda_bucket_name)
     lambda_bucket.objects.delete()
     lambda_bucket.object_versions.delete()
@@ -81,8 +81,8 @@ def delete(event, context):
     logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_lambda_bucket_exception))
 
   try:
-    logger.info("Deleting app s3 bucket")
     app_bucket_name = os.environ['app_bucket']
+    logger.info("Deleting app s3 bucket {}".format(app_bucket_name))
     app_bucket = s3.Bucket(app_bucket_name)
     app_bucket.objects.delete()
     app_bucket.object_versions.delete()
@@ -91,8 +91,8 @@ def delete(event, context):
     logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_app_bucket_exception))
 
   try:
-    logger.info("Deleting lacework s3 bucket")
     lacework_bucket_name = os.environ['lacework_bucket']
+    logger.info("Deleting lacework s3 bucket {}".format(lacework_bucket_name))
     lacework_bucket = s3.Bucket(lacework_bucket_name)
     lacework_bucket.objects.delete()
     lacework_bucket.object_versions.delete()
@@ -101,14 +101,24 @@ def delete(event, context):
     logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_lacework_bucket_exception))
 
   try:
-    logger.info("Deleting artifact s3 bucket")
     artifact_bucket_name = os.environ['artifact_bucket']
+    logger.info("Deleting artifact s3 bucket {}".format(artifact_bucket_name))
     artifact_bucket = s3.Bucket(artifact_bucket_name)
     artifact_bucket.objects.delete()
     artifact_bucket.object_versions.delete()
     logger.info(artifact_bucket.delete())
   except Exception as delete_artifact_bucket_exception:
     logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_artifact_bucket_exception))
+
+  try:
+    eks_audit_bucket_name = os.environ['eks_audit_bucket']
+    logger.info("Deleting eks audit s3 bucket {}".format(eks_audit_bucket_name))
+    eks_audit_bucket = s3.Bucket(eks_audit_bucket_name)
+    eks_audit_bucket.objects.delete()
+    eks_audit_bucket.object_versions.delete()
+    logger.info(eks_audit_bucket.delete())
+  except Exception as eks_audit_bucket_exception:
+    logger.warning("Problem occurred while deleting s3 bucket: {}".format(eks_audit_bucket_exception))
 
   try:
     logger.info("Deleting repositories")
@@ -119,6 +129,10 @@ def delete(event, context):
       repositoryName="demo-app",
       force=True
     ))
+  except Exception as delete_repo_exception:
+    logger.warning("Problem occurred while deleting repository: {}".format(delete_repo_exception))
+
+  try:
     logger.info(ecr_client.delete_repository(
       registryId=aws_account_id,
       repositoryName="log4j-app",
@@ -126,61 +140,6 @@ def delete(event, context):
     ))
   except Exception as delete_repo_exception:
     logger.warning("Problem occurred while deleting repository: {}".format(delete_repo_exception))
-
-  try:
-    eks_client = session.client("eks")
-    aws_account_id = context.invoked_function_arn.split(":")[4]
-
-    cluster = "{}-eks".format(aws_account_id)
-    eks_waiter = eks_client.get_waiter('nodegroup_deleted')
-    ngdict = eks_client.list_nodegroups(
-      clusterName=cluster
-    )
-    logger.info("Deleting eks cluster nodegroups")
-    for ng in ngdict['nodegroups']:
-      logger.info(eks_client.delete_nodegroup(
-        clusterName=cluster,
-        nodegroupName=ng
-      ))
-
-    eks_waiter.wait(
-      clusterName=cluster,
-      nodegroupName=ng,
-      WaiterConfig={
-        'Delay': 30,
-        'MaxAttempts': 20
-      }
-    )
-  except Exception as delete_ng_exception:
-    logger.warning("Problem occurred while deleting cluster nodegroup: {}".format(delete_ng_exception))
-
-  try:
-    logger.info("Deleting eks cluster")
-    response = eks_client.delete_cluster(
-      name=cluster
-    )
-    logger.info("Deleted cluster {} {}".format(cluster, response))
-  except Exception as delete_cluster_exception:
-    logger.warning("Problem occurred while deleting cluster: {}".format(delete_cluster_exception))
-
-  try:
-    logger.info("Deleting eks stack")
-    cfn_client = session.client("cloudformation")
-    # cfn_waiter = cfn_client.get_waiter('stack_delete_complete')
-    stack_name = "eksctl-{}-eks-cluster".format(aws_account_id)
-    response = cfn_client.delete_stack(
-      StackName=stack_name
-    )
-    # cfn_waiter.wait(
-    #   StackName=stack_name,
-    #   WaiterConfig={
-    #     'Delay': 60,
-    #     'MaxAttempts': 240
-    #   }
-    # )
-    logger.info("Deleted eks stack {}".format(response))
-  except Exception as delete_stack_exception:
-    logger.warning("Problem occurred while deleting cluster: {}".format(delete_stack_exception))
 
   send_cfn_response(event, context, SUCCESS, {})
 

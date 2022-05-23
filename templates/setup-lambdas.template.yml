@@ -64,6 +64,7 @@ Resources:
       Acl: 'bucket-owner-full-control'
       Objects:
         - '/lambda/resources.zip'
+        - '/lambda/resourceseks.zip'
 
   CopyRansomwareZips:
     Type: Custom::CopyRansomwareZips
@@ -200,6 +201,28 @@ Resources:
           lambda_bucket: !Sub "${AWS::AccountId}-immers-day-devsecops-eks-lambda-zips-bucket"
           ransomware_bucket: !Sub "${AWS::AccountId}-ransomware-target-bucket"
           app_bucket: !Sub "${AWS::AccountId}-app-bucket"
+          eks_audit_bucket: !Sub "${LaceworkAccountName}-lacework-eks"
+      Role: !GetAtt ResourcesFunctionRole.Arn
+
+  ResourcesEksFunction:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - CopyLambdaZips
+    Properties:
+      Code:
+        S3Bucket: !Ref LambdaZipsBucket
+        S3Key: !Join ['', [!Ref 'S3KeyPrefix', '/lambda/resourceseks.zip']]
+      Handler: resourceseks.lambda_handler
+      Runtime: python3.7
+      Timeout: 900
+      Environment:
+        Variables:
+          artifact_bucket: !Sub "${AWS::AccountId}-immers-day-devsecops-eks-artifact-bucket"
+          lacework_bucket: !Sub "${AWS::AccountId}-laceworkcws-${LaceworkAccountName}"
+          lambda_bucket: !Sub "${AWS::AccountId}-immers-day-devsecops-eks-lambda-zips-bucket"
+          ransomware_bucket: !Sub "${AWS::AccountId}-ransomware-target-bucket"
+          app_bucket: !Sub "${AWS::AccountId}-app-bucket"
+          eks_audit_bucket: !Sub "${LaceworkAccountName}-lacework-eks"
       Role: !GetAtt ResourcesFunctionRole.Arn
 
   ResourcesFunctionRole:
@@ -306,6 +329,12 @@ Resources:
     Properties:
       ServiceToken:
         !GetAtt ResourcesFunction.Arn
+
+  ResourcesEksFunctionExecute:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken:
+        !GetAtt ResourcesEksFunction.Arn
 
 ####### Outputs
 
