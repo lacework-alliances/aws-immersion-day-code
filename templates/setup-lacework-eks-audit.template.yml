@@ -64,10 +64,7 @@ Resources:
     Type: 'AWS::S3::Bucket'
     DeletionPolicy: Retain
     Properties:
-      BucketName: !Join
-        - '-'
-        - - !Ref ResourceNamePrefix
-          - lacework-eks
+      BucketName: !Sub "${AWS::AccountId}-laceworkeks-${ResourceNamePrefix}"
       NotificationConfiguration:
         TopicConfigurations:
           - Topic: !Ref LaceworkEKSSNSTopic
