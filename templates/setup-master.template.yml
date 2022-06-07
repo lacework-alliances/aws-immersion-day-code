@@ -69,7 +69,6 @@ Parameters:
 Resources:
   BaseVpc:
     Type: AWS::CloudFormation::Stack
-    DependsOn: LambdaFunctions
     Properties:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-vpc.template.yml
@@ -78,7 +77,6 @@ Resources:
     Type: AWS::CloudFormation::Stack
     DependsOn:
       - BaseVpc
-      - LambdaFunctions
     Properties:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-bastion-eks.template.yml
@@ -95,7 +93,6 @@ Resources:
     Type: AWS::CloudFormation::Stack
     DependsOn:
       - BastionEks
-      - LambdaFunctions
     Properties:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-lacework.template.yml
@@ -108,7 +105,6 @@ Resources:
     Type: AWS::CloudFormation::Stack
     DependsOn:
       - BastionEks
-      - LambdaFunctions
     Properties:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-lacework-eks-audit.template.yml
@@ -122,7 +118,6 @@ Resources:
       - BaseVpc
       - BastionEks
       - Pipelines
-      - LambdaFunctions
     Properties:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-ecs.template.yml
@@ -131,8 +126,22 @@ Resources:
         PublicSubnetA: !GetAtt BaseVpc.Outputs.PublicSubnetA
         PublicSubnetB: !GetAtt BaseVpc.Outputs.PublicSubnetB
 
+  Pipelines:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - BastionEks
+      - LambdaFunctions
+    Properties:
+      TemplateURL: >-
+        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-pipelines.template.yml
+      Parameters:
+        S3KeyPrefix: !Ref S3KeyPrefix
+        LaceworkAccountName: !Ref LaceworkAccountName
+
   LambdaFunctions:
     Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - Lacework
     Properties:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-lambdas.template.yml
@@ -141,16 +150,7 @@ Resources:
         S3BucketName: !Ref S3BucketName
         S3KeyPrefix: !Ref S3KeyPrefix
 
-  Pipelines:
-    Type: AWS::CloudFormation::Stack
-    DependsOn:
-      - LambdaFunctions
-      - BastionEks
-    Properties:
-      TemplateURL: >-
-        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-pipelines.template.yml
-      Parameters:
-        S3KeyPrefix: !Ref S3KeyPrefix
+
 
 
 

@@ -39,20 +39,20 @@ Resources:
   RansomwareBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${AWS::AccountId}-ransomware-target-bucket"
+      BucketName: !Join [ "-", [ !Sub "${AWS::AccountId}-ransomware-bucket", !Select [ 4, !Split [ '-', !Select [ 2, !Split [ '/', !Ref AWS::StackId ] ] ] ] ] ]
       AccessControl: PublicReadWrite
 
   AppBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${AWS::AccountId}-app-bucket"
+      BucketName: !Sub "${AWS::AccountId}-app-bucket-${LaceworkAccountName}"
       VersioningConfiguration:
         Status: Enabled
 
   LambdaZipsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${AWS::AccountId}-immers-day-devsecops-eks-lambda-zips-bucket"
+      BucketName: !Sub "${AWS::AccountId}-immers-lambda-bucket-${LaceworkAccountName}"
 
   CopyLambdaZips:
     Type: Custom::CopyLambdaZips
@@ -196,12 +196,12 @@ Resources:
       Timeout: 900
       Environment:
         Variables:
-          artifact_bucket: !Sub "${AWS::AccountId}-immers-day-devsecops-eks-artifact-bucket"
+          artifact_bucket: !Sub "${AWS::AccountId}-immers-artifact-bucket-${LaceworkAccountName}"
           lacework_bucket: !Sub "${AWS::AccountId}-laceworkcws-${LaceworkAccountName}"
-          lambda_bucket: !Sub "${AWS::AccountId}-immers-day-devsecops-eks-lambda-zips-bucket"
-          ransomware_bucket: !Sub "${AWS::AccountId}-ransomware-target-bucket"
-          app_bucket: !Sub "${AWS::AccountId}-app-bucket"
-          eks_audit_bucket: !Sub "${LaceworkAccountName}-lacework-eks"
+          lambda_bucket: !Ref LambdaZipsBucket
+          ransomware_bucket: !Ref RansomwareBucket
+          app_bucket: !Ref AppBucket
+          eks_audit_bucket: !Sub "${AWS::AccountId}-laceworkeks-${LaceworkAccountName}"
       Role: !GetAtt ResourcesFunctionRole.Arn
 
   ResourcesEksFunction:
@@ -217,12 +217,7 @@ Resources:
       Timeout: 900
       Environment:
         Variables:
-          artifact_bucket: !Sub "${AWS::AccountId}-immers-day-devsecops-eks-artifact-bucket"
-          lacework_bucket: !Sub "${AWS::AccountId}-laceworkcws-${LaceworkAccountName}"
-          lambda_bucket: !Sub "${AWS::AccountId}-immers-day-devsecops-eks-lambda-zips-bucket"
-          ransomware_bucket: !Sub "${AWS::AccountId}-ransomware-target-bucket"
-          app_bucket: !Sub "${AWS::AccountId}-app-bucket"
-          eks_audit_bucket: !Sub "${LaceworkAccountName}-lacework-eks"
+          eks_cluster: !Sub "${AWS::AccountId}-eks-${LaceworkAccountName}"
       Role: !GetAtt ResourcesFunctionRole.Arn
 
   ResourcesFunctionRole:

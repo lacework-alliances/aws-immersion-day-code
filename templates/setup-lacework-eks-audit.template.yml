@@ -56,8 +56,9 @@ Resources:
                 'aws:SourceArn': !Join
                   - ''
                   - - 'arn:aws:s3:*:*:'
+                    - !Ref AWS::AccountId
+                    - '-laceworkeks-'
                     - !Ref ResourceNamePrefix
-                    - '-lacework-eks'
       Topics:
         - !Ref LaceworkEKSSNSTopic
   LaceworkEKSBucket:
@@ -83,10 +84,7 @@ Resources:
   LaceworkEKSFirehose:
     Type: 'AWS::KinesisFirehose::DeliveryStream'
     Properties:
-      DeliveryStreamName: !Join
-        - '-'
-        - - !Ref ResourceNamePrefix
-          - lacework-eks
+      DeliveryStreamName: !Sub "${AWS::AccountId}-laceworkeks-${ResourceNamePrefix}"
       DeliveryStreamType: DirectPut
       S3DestinationConfiguration:
         RoleARN: !GetAtt
@@ -198,13 +196,15 @@ Resources:
               - !Join
                 - ''
                 - - 'arn:aws:s3:::'
+                  - !Ref AWS::AccountId
+                  - '-laceworkeks-'
                   - !Ref ResourceNamePrefix
-                  - '-lacework-eks'
               - !Join
                 - ''
                 - - 'arn:aws:s3:::'
+                  - !Ref AWS::AccountId
+                  - '-laceworkeks-'
                   - !Ref ResourceNamePrefix
-                  - '-lacework-eks'
                   - /*
           - Sid: CloudWatchLogsPermissions
             Action:

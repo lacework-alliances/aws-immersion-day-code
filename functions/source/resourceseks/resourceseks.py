@@ -60,11 +60,11 @@ def delete(event, context):
   logger.info("resources.delete called.")
 
   aws_account_id = context.invoked_function_arn.split(":")[4]
+  cluster = os.environ['eks_cluster']
 
   try:
     eks_client = session.client("eks")
 
-    cluster = "{}-eks".format(aws_account_id)
     eks_waiter = eks_client.get_waiter('nodegroup_deleted')
     ngdict = eks_client.list_nodegroups(
       clusterName=cluster
@@ -97,10 +97,11 @@ def delete(event, context):
     logger.warning("Problem occurred while deleting cluster: {}".format(delete_cluster_exception))
 
   try:
-    logger.info("Deleting eks stack")
+    stack_name = "eksctl-{}-cluster".format(cluster)
+    logger.info("Deleting eks stack {}".format(stack_name))
     cfn_client = session.client("cloudformation")
     cfn_waiter = cfn_client.get_waiter('stack_delete_complete')
-    stack_name = "eksctl-{}-eks-cluster".format(aws_account_id)
+
     response = cfn_client.delete_stack(
       StackName=stack_name
     )
@@ -108,7 +109,7 @@ def delete(event, context):
       StackName=stack_name,
       WaiterConfig={
         'Delay': 60,
-        'MaxAttempts': 240
+        'MaxAttempts': 5
       }
     )
     logger.info("Deleted eks stack {}".format(response))

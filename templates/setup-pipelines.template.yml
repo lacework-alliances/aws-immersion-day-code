@@ -7,9 +7,12 @@ Metadata:
           default: "Basic Configuration"
         Parameters:
           - S3KeyPrefix
+          - LaceworkAccountName
     ParameterLabels:
       S3KeyPrefix:
         default: CloudFormation S3 Key Prefix
+      LaceworkAccountName:
+        default: Lacework Account Name
 
 Parameters:
   S3KeyPrefix:
@@ -17,12 +20,18 @@ Parameters:
     Default: awsimmersionday
     MinLength: '1'
     Description: "S3 key prefix for assets directory. Use this if you want to customize your deployment. The prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slashes (/). For more information, see https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html."
+  LaceworkAccountName:
+    Type: String
+    Description: Your Lacework account name. ie. <account name>.lacework.net
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$'
+    ConstraintDescription: Invalid Lacework account name. Account name may contain alphanumeric characters and dashes only.
 
 Resources:
   ArtifactBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${AWS::AccountId}-immers-day-devsecops-eks-artifact-bucket"
+      BucketName: !Sub "${AWS::AccountId}-immers-artifact-bucket-${LaceworkAccountName}"
 
   ECRDemoAppRepository:
     Type: AWS::ECR::Repository
@@ -201,6 +210,8 @@ Resources:
   CodeBuildBuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
+      Name: !Sub "${AWS::AccountId}-codebuild-build-${LaceworkAccountName}"
+      Description: "CodeBuild, Lacework Scan, Push to ECR"
       Artifacts:
         Type: CODEPIPELINE
       Source:
@@ -218,14 +229,12 @@ Resources:
             Value: demo-app
           - Name: DOCKER_REG
             Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
-      Name: !Sub ${AWS::AccountId}-codebuild-build
-      Description: "CodeBuild, Lacework Scan, Push to ECR"
       ServiceRole: !Ref CodeBuildServiceRole
 
   CodeBuildDeployEksProject:
     Type: AWS::CodeBuild::Project
     Properties:
-      Name: !Sub ${AWS::AccountId}-codebuild-deploy-eks
+      Name: !Sub "${AWS::AccountId}-codebuild-deploy-eks-${LaceworkAccountName}"
       Description: "Deploy to EKS"
       Artifacts:
         Type: CODEPIPELINE
@@ -244,7 +253,7 @@ Resources:
           - Name: DOCKER_REG
             Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
           - Name: EKS_CLUSTER
-            Value: !Sub "${AWS::AccountId}-${AWS::Region}-eks"
+            Value: !Sub "${AWS::AccountId}-eks-${LaceworkAccountName}"
           - Name: IMAGE_NAME
             Value: demo-app
           - Name: IMAGE_TAG
@@ -254,7 +263,7 @@ Resources:
   CodeBuildDeployEcsProject:
     Type: AWS::CodeBuild::Project
     Properties:
-      Name: !Sub ${AWS::AccountId}-codebuild-deploy-ecs
+      Name: !Sub "${AWS::AccountId}-codebuild-deploy-ecs-${LaceworkAccountName}"
       Description: "Deploy to ECS"
       Artifacts:
         Type: CODEPIPELINE
@@ -297,7 +306,7 @@ Resources:
   CodeBuildDeployLog4jProject:
     Type: AWS::CodeBuild::Project
     Properties:
-      Name: !Sub ${AWS::AccountId}-codebuild-deploy-log4j-eks
+      Name: !Sub "${AWS::AccountId}-codebuild-deploy-log4j-eks-${LaceworkAccountName}"
       Description: "Deploy Log4j to EKS"
       Artifacts:
         Type: CODEPIPELINE
@@ -316,13 +325,13 @@ Resources:
           - Name: DOCKER_REG
             Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
           - Name: EKS_CLUSTER
-            Value: !Sub "${AWS::AccountId}-${AWS::Region}-eks"
+            Value: !Sub "${AWS::AccountId}-eks-${LaceworkAccountName}"
       ServiceRole: !Ref CodeBuildServiceRole
 
   EKSPipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: !Sub ${AWS::AccountId}-codepipeline-eks
+      Name: !Sub "${AWS::AccountId}-codepipeline-eks-${LaceworkAccountName}"
       RoleArn: !GetAtt CodePipelineServiceRole.Arn
       ArtifactStore:
         Type: S3
@@ -337,7 +346,7 @@ Resources:
                 Version: 1
                 Provider: S3
               Configuration:
-                S3Bucket: !Sub "${AWS::AccountId}-app-bucket"
+                S3Bucket: !Sub "${AWS::AccountId}-app-bucket-${LaceworkAccountName}"
                 S3ObjectKey: !Sub "${S3KeyPrefix}/app/app.zip"
                 PollForSourceChanges: false
               OutputArtifacts:
@@ -377,7 +386,7 @@ Resources:
   ECSPipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: !Sub ${AWS::AccountId}-codepipeline-ecs
+      Name: !Sub "${AWS::AccountId}-codepipeline-ecs-${LaceworkAccountName}"
       RoleArn: !GetAtt CodePipelineServiceRole.Arn
       ArtifactStore:
         Type: S3
@@ -392,7 +401,7 @@ Resources:
                 Version: 1
                 Provider: S3
               Configuration:
-                S3Bucket: !Sub "${AWS::AccountId}-app-bucket"
+                S3Bucket: !Sub "${AWS::AccountId}-app-bucket-${LaceworkAccountName}"
                 S3ObjectKey: !Sub "${S3KeyPrefix}/app/app.zip"
                 PollForSourceChanges: false
               OutputArtifacts:
@@ -432,7 +441,7 @@ Resources:
   Log4jPipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: !Sub ${AWS::AccountId}-codepipeline-log4j-eks
+      Name: !Sub "${AWS::AccountId}-codepipeline-log4j-eks-${LaceworkAccountName}"
       RoleArn: !GetAtt CodePipelineServiceRole.Arn
       ArtifactStore:
         Type: S3
@@ -447,7 +456,7 @@ Resources:
                 Version: 1
                 Provider: S3
               Configuration:
-                S3Bucket: !Sub "${AWS::AccountId}-app-bucket"
+                S3Bucket: !Sub "${AWS::AccountId}-app-bucket-${LaceworkAccountName}"
                 S3ObjectKey: !Sub "${S3KeyPrefix}/app/app.zip"
                 PollForSourceChanges: false
               OutputArtifacts:
@@ -487,7 +496,7 @@ Resources:
   CodeDeployServiceRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: "code-deploy-service-role"
+      RoleName: !Sub "${AWS::AccountId}-code-deploy-service-role-${LaceworkAccountName}"
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -505,7 +514,7 @@ Resources:
   CodeDeployApplication:
     Type: AWS::CodeDeploy::Application
     Properties:
-      ApplicationName: !Sub ${AWS::AccountId}-codedeploy-ecs
+      ApplicationName: !Sub "${AWS::AccountId}-codedeploy-ecs-${LaceworkAccountName}"
       ComputePlatform: ECS
 
 ####### Outputs

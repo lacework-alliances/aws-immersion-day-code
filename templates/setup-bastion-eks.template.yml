@@ -28,7 +28,42 @@ Metadata:
         default: Lacework Secret Key
       KeyName:
         default: AWS SSH Key for Bastion
-
+Mappings:
+  BastionAmiMap:
+    eu-north-1:
+      ami: ami-09733597242dc581b
+    ap-south-1:
+      ami: ami-0108d6a82a783b352
+    eu-west-3:
+      ami: ami-00bf323ac99d8bbbb
+    eu-west-2:
+      ami: ami-0c0a1cc13a52a158f
+    eu-west-1:
+      ami: ami-09ce2fc392a4c0fbc
+    ap-northeast-3:
+      ami: ami-0757d9e44f1490914
+    ap-northeast-2:
+      ami: ami-003ef1c0e2776ea27
+    ap-northeast-1:
+      ami: ami-0404778e217f54308
+    sa-east-1:
+      ami: ami-02edf5731752693cc
+    ca-central-1:
+      ami: ami-09321d7714bae0aab
+    ap-southeast-1:
+      ami: ami-03326c3f2f37e56a4
+    ap-southeast-2:
+      ami: ami-0c9f90931dd48d1f2
+    eu-central-1:
+      ami: ami-0bd99ef9eccfee250
+    us-east-1:
+      ami: ami-04902260ca3d33422
+    us-east-2:
+      ami: ami-0d718c3d715cec4a7
+    us-west-1:
+      ami: ami-0d5075a2643fdf738
+    us-west-2:
+      ami: ami-0142f6ace1c558c7d
 Parameters:
   VpcId:
     Type: String
@@ -116,7 +151,11 @@ Resources:
     Properties:
       LaunchConfigurationName: !Join ["", [!Ref "AWS::StackName", "BastionHostLaunchConfiguration"]]
       AssociatePublicIpAddress: true
-      ImageId: "ami-0142f6ace1c558c7d"
+      ImageId:
+        Fn::FindInMap:
+          - BastionAmiMap
+          - Ref: AWS::Region
+          - ami
       InstanceType: t3.micro
       IamInstanceProfile: !Ref BastionProfile
       KeyName: !Ref KeyName
@@ -127,7 +166,11 @@ Resources:
           #!/bin/bash
           set -o xtrace
           pwd
-          yum install -y python3 python3-pip tar openssh-server vim-minimal bash-completion jq at && yum clean all && pip3 install awscli
+          yum install -y python3 python3-pip tar openssh-server vim-minimal bash-completion jq at && yum clean all
+          #INSTALL LATEST AWS CLI
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          ./aws/install
           # GET AN ACCESS TOKEN FROM LACEWORK
           accesstoken=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/access/tokens' \
           --header 'Content-Type: application/json' \
@@ -169,7 +212,7 @@ Resources:
               chmod +x /usr/local/bin/aws-iam-authenticator && \
               curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp && \
               sudo mv /tmp/eksctl /usr/local/bin
-          eksctl create cluster --name ${AWS::AccountId}-${AWS::Region}-eks --region ${AWS::Region} --with-oidc --ssh-access --ssh-public-key ${KeyName}
+          eksctl create cluster --name ${AWS::AccountId}-eks-${LaceworkAccountName} --region ${AWS::Region} --with-oidc --ssh-access --ssh-public-key ${KeyName}
           timeout 10m bash -c -- 'while [ -z "$status" ] || [ "$status" != "\"ACTIVE\"" ]; do status=$(aws eks --region ${AWS::Region} describe-cluster --name ${AWS::AccountId}-eks --query cluster.status);echo $status; sleep 2; done'
           # GET AN INLINE SCANNER TOKEN FROM LACEWORK
           inline_scanner_token=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/ContainerRegistries' \
@@ -215,13 +258,12 @@ Resources:
           }')
           echo $ecr_scanner_response
           # SETUP THE LACEWORK AGENT ON THE EKS CLUSTER
-          aws eks --region ${AWS::Region} update-kubeconfig --name ${AWS::AccountId}-${AWS::Region}-eks
-          sed -i.bak -e 's/v1alpha1/v1beta1/' /home/ec2-user/.kube/config
+          aws eks --region ${AWS::Region} update-kubeconfig --name ${AWS::AccountId}-eks-${LaceworkAccountName}
           curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
           chmod 700 get_helm.sh
           ./get_helm.sh
           helm repo add lacework https://lacework.github.io/helm-charts/
-          helm upgrade --install --namespace lacework --create-namespace --set laceworkConfig.accessToken=$eks_agent_token --set laceworkConfig.kubernetesCluster=${AWS::AccountId}-eks --set laceworkConfig.env=${AWS::AccountId}-eks lacework-agent lacework/lacework-agent
+          helm upgrade --install --namespace lacework --create-namespace --set laceworkConfig.accessToken=$eks_agent_token --set laceworkConfig.kubernetesCluster=${AWS::AccountId}-eks-${LaceworkAccountName} --set laceworkConfig.env=${AWS::AccountId}-eks-${LaceworkAccountName} lacework-agent lacework/lacework-agent
           # SETUP THE LACEWORK AGENT ON THIS HOST
           curl -O -sSL https://packages.lacework.net/RPMS/x86_64/lacework-prod.repo
           mv lacework-prod.repo /etc/yum.repos.d
