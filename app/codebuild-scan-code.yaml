@@ -1,0 +1,19 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      java: corretto11
+    commands:
+      - java -version
+      - mvn --version
+      - git --version
+      - curl -OL https://github.com/aws/aws-codeguru-cli/releases/download/0.2.1/aws-codeguru-cli.zip
+      - unzip aws-codeguru-cli.zip
+      - export PATH=$PATH:./aws-codeguru-cli/bin
+  build:
+    commands:
+      - aws-codeguru-cli --region us-west-2 --no-prompt  --fail-on-recommendations --root-dir ./ --src src --output ./output || true
+      - cat ./output/recommendations.json
+
+
+

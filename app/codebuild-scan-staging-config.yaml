@@ -1,0 +1,21 @@
+version: 0.2
+env:
+  parameter-store:
+    LW_ACCOUNT: "LW_ACCOUNT"
+    LW_API_KEY: "LW_API_KEY"
+    LW_API_SECRET: "LW_API_SECRET"
+phases:
+  install:
+    commands:
+      - curl https://raw.githubusercontent.com/lacework/go-sdk/master/cli/install.sh | bash
+  build:
+    commands:
+      - export LW_ACCOUNT=$LW_ACCOUNT
+      - export LW_API_KEY=$LW_API_KEY
+      - export LW_API_SECRET=$LW_API_SECRET
+      - lacework compliance aws run-assessment $AWS_ACCOUNT_ID --noninteractive || true
+      - lacework compliance aws get-report $AWS_ACCOUNT_ID --json --noninteractive > aws-assessment.json
+      - cat aws-assessment.json
+      - cat aws-assessment.json | jq '.summary[0].num_severity_1_non_compliance'
+
+

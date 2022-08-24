@@ -1,0 +1,31 @@
+version: 0.2
+env:
+  parameter-store:
+    LW_ACCOUNT: "LW_ACCOUNT"
+    LW_ACCESS_TOKEN: "INLINE_SCANNER_TOKEN"
+phases:
+  install:
+    runtime-versions:
+      java: corretto8
+    commands:
+      - curl -L https://github.com/lacework/lacework-vulnerability-scanner/releases/latest/download/lw-scanner-linux-amd64 -o lw-scanner
+      - chmod +x lw-scanner
+  build:
+    commands:
+      - mvn clean install
+      - pwd
+      - ls
+      - ls target
+      - docker build -t "$DOCKER_REG/$IMAGE_NAME:$CODEBUILD_BUILD_NUMBER" -t "$DOCKER_REG/$IMAGE_NAME:latest" .
+  post_build:
+    commands:
+      - export LW_ACCOUNT_NAME=$LW_ACCOUNT
+      - export LW_ACCESS_TOKEN=$LW_ACCESS_TOKEN
+      - export LW_SCANNER_DISABLE_UPDATES=true
+      - export LW_SCANNER_SAVE_RESULTS=true
+      - rm -rf ./evaluations/$IMAGE_NAME/$CODEBUILD_BUILD_NUMBER/evaluation_*.json || true
+      - ./lw-scanner image evaluate $DOCKER_REG/$IMAGE_NAME $CODEBUILD_BUILD_NUMBER --build-id $CODEBUILD_BUILD_NUMBER --data-directory . || true
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $DOCKER_REG
+      - docker image push -a "$DOCKER_REG/$IMAGE_NAME"
+
+

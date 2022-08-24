@@ -112,20 +112,6 @@ Resources:
         ResourceNamePrefix: !Ref LaceworkAccountName
         ExternalID: !Select [ 4, !Split [ '-', !Select [ 2, !Split [ '/', !Ref AWS::StackId ] ] ] ]
 
-  Ecs:
-    Type: AWS::CloudFormation::Stack
-    DependsOn:
-      - BaseVpc
-      - BastionEks
-      - Pipelines
-    Properties:
-      TemplateURL: >-
-        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-ecs.template.yml
-      Parameters:
-        VpcId: !GetAtt BaseVpc.Outputs.VpcId
-        PublicSubnetA: !GetAtt BaseVpc.Outputs.PublicSubnetA
-        PublicSubnetB: !GetAtt BaseVpc.Outputs.PublicSubnetB
-
   Pipelines:
     Type: AWS::CloudFormation::Stack
     DependsOn:
@@ -133,7 +119,7 @@ Resources:
       - LambdaFunctions
     Properties:
       TemplateURL: >-
-        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-pipelines.template.yml
+        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-pipeline.template.yml
       Parameters:
         S3KeyPrefix: !Ref S3KeyPrefix
         LaceworkAccountName: !Ref LaceworkAccountName

@@ -202,6 +202,8 @@ Resources:
           ransomware_bucket: !Ref RansomwareBucket
           app_bucket: !Ref AppBucket
           eks_audit_bucket: !Sub "${AWS::AccountId}-laceworkeks-${LaceworkAccountName}"
+          staging_ecr_repo: "staging-demo-app"
+          prod_ecr_repo: "prod-demo-app"
       Role: !GetAtt ResourcesFunctionRole.Arn
 
   ResourcesEksFunction:

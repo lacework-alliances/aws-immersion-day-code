@@ -16,9 +16,7 @@ spec:
           image: imageName # IMPORTANT: Update!
           imagePullPolicy: Always
           ports:
-            - containerPort: 443
-              name: https
-            - containerPort: 80
+            - containerPort: 8080
               name: http
       imagePullSecrets:
         - name: regcred
@@ -32,11 +30,8 @@ metadata:
 spec:
   type: LoadBalancer
   ports:
-    - name: https
-      port: 443
-      protocol: TCP
     - name: http
-      port: 80
+      port: 8080
       protocol: TCP
   selector:
     app:  demo-app

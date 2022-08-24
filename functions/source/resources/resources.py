@@ -121,21 +121,23 @@ def delete(event, context):
     logger.warning("Problem occurred while deleting s3 bucket: {}".format(eks_audit_bucket_exception))
 
   try:
+    staging_ecr_repo = os.environ['staging_ecr_repo']
     logger.info("Deleting repositories")
     ecr_client = session.client("ecr")
     aws_account_id = context.invoked_function_arn.split(":")[4]
     logger.info(ecr_client.delete_repository(
       registryId=aws_account_id,
-      repositoryName="demo-app",
+      repositoryName=staging_ecr_repo,
       force=True
     ))
   except Exception as delete_repo_exception:
     logger.warning("Problem occurred while deleting repository: {}".format(delete_repo_exception))
 
   try:
+    prod_ecr_repo = os.environ['prod_ecr_repo']
     logger.info(ecr_client.delete_repository(
       registryId=aws_account_id,
-      repositoryName="log4j-app",
+      repositoryName=prod_ecr_repo,
       force=True
     ))
   except Exception as delete_repo_exception:

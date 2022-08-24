@@ -212,7 +212,7 @@ Resources:
               chmod +x /usr/local/bin/aws-iam-authenticator && \
               curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp && \
               sudo mv /tmp/eksctl /usr/local/bin
-          eksctl create cluster --name ${AWS::AccountId}-eks-${LaceworkAccountName} --region ${AWS::Region} --with-oidc --ssh-access --ssh-public-key ${KeyName}
+          eksctl create cluster --name ${AWS::AccountId}-eks-${LaceworkAccountName} --region ${AWS::Region} --ssh-access --ssh-public-key ${KeyName}
           timeout 10m bash -c -- 'while [ -z "$status" ] || [ "$status" != "\"ACTIVE\"" ]; do status=$(aws eks --region ${AWS::Region} describe-cluster --name ${AWS::AccountId}-eks --query cluster.status);echo $status; sleep 2; done'
           # GET AN INLINE SCANNER TOKEN FROM LACEWORK
           inline_scanner_token=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/ContainerRegistries' \
@@ -280,6 +280,9 @@ Resources:
           kubectl get -n kube-system configmap/aws-auth -o yaml | awk "/mapRoles: \|/{print;print \"$ROLE\";next}1" > /tmp/aws-auth-patch.yml
           kubectl patch configmap/aws-auth -n kube-system --patch "$(cat /tmp/aws-auth-patch.yml)"
           kubectl get configmap aws-auth -o yaml -n kube-system
+          # CREATE NAMESPACES
+          kubectl create namespace staging-demo-app
+          kubectl create namespace prod-demo-app
           # SIMULATE A RANSOMWARE SCAN
           curl -O https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/scripts/badguys.sh
           chmod a+x badguys.sh

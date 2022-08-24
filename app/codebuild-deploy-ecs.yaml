@@ -1,9 +1,0 @@
-version: 0.2
-phases:
-  post_build:
-    commands:
-      - printf '[{"name":"demo-app","imageUri":"%s"}]' $DOCKER_REG/$IMAGE_NAME:$IMAGE_TAG > imagedefinitions.json
-      - echo "Demo App launched!"
-artifacts:
-  files: imagedefinitions.json
-
