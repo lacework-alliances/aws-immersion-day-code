@@ -1,12 +1,10 @@
 # AWS Immersion Day with Lacework Application and Infrastructure Code
 
-This repository contains the application and infrastructure code for [AWS Immersion Day with Lacework](https://lacework-alliances.github.io/aws-immersion-day-with-lacework/). The application and infrastructure code support the following instruction modules.
+This repository contains the application and infrastructure code for [AWS Immersion Day with Lacework](https://lacework-alliances.github.io/aws-immersion-day/). The application and infrastructure code support the following instruction modules.
 
+* Lacework Platform Overview
 * Advanced Cloud Security Posture Management (CSPM+)
 * Vulnerability & Workload Protection (DevSecOps) with CodePipeline, CodeBuild, ECR & EKS
-* Vulnerability & Workload Protection (DevSecOps) with CodePipeline, CodeBuild, ECR & ECS
-* SIEM: AWS Security Hub and Lacework
-* Seamless Multi-Account Security: Lacework with AWS Control Tower
 
 ## Demo Application Code
 
