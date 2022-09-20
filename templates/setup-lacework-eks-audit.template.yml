@@ -282,7 +282,7 @@ Resources:
         - Arn
       ExternalId: !Ref ExternalID
       SNSTopicArn: !Ref LaceworkEKSSNSTopic
-      ApiToken: "{{resolve:ssm:AccessToken}}"
+      ApiToken: "{{resolve:ssm:ACCESS_TOKEN}}"
       Account: !Ref ResourceNamePrefix
       TemplateVersion: '1.1'
       AWSAccountId: !Ref 'AWS::AccountId'

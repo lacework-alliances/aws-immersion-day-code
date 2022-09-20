@@ -9,6 +9,8 @@ Metadata:
           - LaceworkAccountName
           - LaceworkAccessKeyID
           - LaceworkSecretKey
+          - SolubleOrgID
+          - SolubleApiToken
       - Label:
           default: "Advanced Configuration"
         Parameters:
@@ -21,6 +23,10 @@ Metadata:
         default: Lacework Access Key ID
       LaceworkSecretKey:
         default: Lacework Secret Key
+      SolubleOrgID:
+        default: Lacework Soluble Org ID
+      SolubleApiToken:
+        default: Lacework Soluble API Token
       S3BucketName:
         default: CloudFormation S3 Bucket
       S3KeyPrefix:
@@ -49,6 +55,21 @@ Parameters:
     AllowedPattern: '^[a-zA-Z0-9_]*$'
     ConstraintDescription: Lacework API Secret Key contains alphanumeric characters and symbols only.
     Description: Lacework API Secret Key. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
+  SolubleOrgID:
+    Default: 604336610407
+    Type: String
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9_]*$'
+    ConstraintDescription: Lacework Soluble Org ID contains alphanumeric characters and symbols only.
+    Description: Lacework Soluble Org ID. See https://docs.lacework.com/iac/configure-iac-security-settings#configure-organization-settings
+  SolubleApiToken:
+    Default: eyJraWQiOiJzand0LWEyYTM1YmFlIiwiYWxnIjoiSFMyNTYifQ.eyJhdWQiOiJzZXNzaW9uIiwiZXhwIjoxOTcyOTQ3MTQyLCJpYXQiOjE2NTc1ODcxNDIsInN1YiI6InUtYjc1MDExNTMyZjBlMjYzZiJ9.L-50UiCyopIAFTpOohfS0TzKR8Tna65tPlFQQrSVUW4
+    Type: String
+    NoEcho: true
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9_@./#&+-]*$'
+    ConstraintDescription: Lacework Soluble API Token contains alphanumeric characters and symbols only.
+    Description: Lacework Soluble API Token. See https://docs.lacework.com/iac/configure-iac-security-settings#configure-token-settings
   KeyName:
     Default: ee-default-keypair
     Description: The EC2 Key Pair to allow SSH access to the bastion host.
@@ -87,6 +108,8 @@ Resources:
         LaceworkAccountName: !Ref LaceworkAccountName
         LaceworkAccessKeyID: !Ref LaceworkAccessKeyID
         LaceworkSecretKey: !Ref LaceworkSecretKey
+        SolubleOrgID: !Ref SolubleOrgID
+        SolubleApiToken: !Ref SolubleApiToken
         KeyName: !Ref KeyName
 
   Lacework:

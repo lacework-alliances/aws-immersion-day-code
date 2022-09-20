@@ -341,7 +341,7 @@ Resources:
         - Arn
       ExternalId: !Ref ExternalID
       SqsQueueUrl: !Ref LaceworkCWSQueue
-      ApiToken: "{{resolve:ssm:AccessToken}}"
+      ApiToken: "{{resolve:ssm:ACCESS_TOKEN}}"
       Account: !Ref ResourceNamePrefix
       TemplateVersion: '1.1'
       AWSAccountId: !Ref 'AWS::AccountId'

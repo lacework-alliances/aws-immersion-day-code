@@ -12,6 +12,8 @@ Metadata:
           - LaceworkAccountName
           - LaceworkAccessKeyID
           - LaceworkSecretKey
+          - SolubleOrgID
+          - SolubleApiToken
           - KeyName
     ParameterLabels:
       VpcId:
@@ -26,6 +28,10 @@ Metadata:
         default: Lacework Access Key ID
       LaceworkSecretKey:
         default: Lacework Secret Key
+      SolubleOrgID:
+        default: Soluble Org ID
+      SolubleApiToken:
+        default: Soluble API Token
       KeyName:
         default: AWS SSH Key for Bastion
 Mappings:
@@ -96,6 +102,21 @@ Parameters:
     AllowedPattern: '^[a-zA-Z0-9_]*$'
     ConstraintDescription: Lacework API Secret Key contains alphanumeric characters and symbols only.
     Description: Lacework API Secret Key. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
+  SolubleOrgID:
+    Default: 604336610407
+    Type: String
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9_]*$'
+    ConstraintDescription: Lacework Soluble Org ID contains alphanumeric characters and symbols only.
+    Description: Lacework Soluble Org ID. See https://docs.lacework.com/iac/configure-iac-security-settings#configure-organization-settings
+  SolubleApiToken:
+    Default: eyJraWQiOiJzand0LWEyYTM1YmFlIiwiYWxnIjoiSFMyNTYifQ.eyJhdWQiOiJzZXNzaW9uIiwiZXhwIjoxOTcyOTQ3MTQyLCJpYXQiOjE2NTc1ODcxNDIsInN1YiI6InUtYjc1MDExNTMyZjBlMjYzZiJ9.L-50UiCyopIAFTpOohfS0TzKR8Tna65tPlFQQrSVUW4
+    Type: String
+    NoEcho: true
+    MinLength: '1'
+    AllowedPattern: '^[a-zA-Z0-9_@./#&+-]*$'
+    ConstraintDescription: Lacework Soluble API Token contains alphanumeric characters and symbols only.
+    Description: Lacework Soluble API Token. See https://docs.lacework.com/iac/configure-iac-security-settings#configure-token-settings
   KeyName:
     Description: The EC2 Key Pair to allow SSH access to the instances
     Type: AWS::EC2::KeyPair::KeyName
@@ -187,14 +208,6 @@ Resources:
           "tokenEnabled": "1",
           "tokenAlias": "aws-immersion-day-eks-${AWS::StackId}"
           }' | jq -r '.data.accessToken')
-          # GET AN ECS AGENT TOKEN FROM LACEWORK
-          ecs_agent_token=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/AgentAccessTokens' \
-          --header 'Content-Type: application/json' \
-          --header "Authorization: Bearer $accesstoken" \
-          --data-raw '{
-          "tokenEnabled": "1",
-          "tokenAlias": "aws-immersion-day-ecs-${AWS::StackId}"
-          }' | jq -r '.data.accessToken')
           # GET A EC2 AGENT TOKEN FROM LACEWORK
           ec2_agent_token=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/AgentAccessTokens' \
           --header 'Content-Type: application/json' \
@@ -229,10 +242,13 @@ Resources:
           }' | jq -r '.data.serverToken.serverToken')
           echo $inline_scanner_token
           # STORE THE SCANNER AND ECS LACEWORK TOKENS IN SSM
-          aws ssm put-parameter --overwrite --region ${AWS::Region} --name "LWAccountName" --type "String" --value ${LaceworkAccountName} --overwrite
-          aws ssm put-parameter --overwrite --region ${AWS::Region} --name "AccessToken" --type "String" --value $accesstoken --overwrite
-          aws ssm put-parameter --overwrite --region ${AWS::Region} --name "InlineScannerToken" --type "String" --value $inline_scanner_token --overwrite
-          aws ssm put-parameter --overwrite --region ${AWS::Region} --name "ECSAgentToken" --type "String" --value $ecs_agent_token --overwrite
+          aws ssm put-parameter --overwrite --region ${AWS::Region} --name "SOLUBLE_ORG_ID" --type "String" --value ${SolubleOrgID} --overwrite
+          aws ssm put-parameter --overwrite --region ${AWS::Region} --name "SOLUBLE_API_TOKEN" --type "String" --value ${SolubleApiToken} --overwrite
+          aws ssm put-parameter --overwrite --region ${AWS::Region} --name "LW_ACCOUNT" --type "String" --value ${LaceworkAccountName} --overwrite
+          aws ssm put-parameter --overwrite --region ${AWS::Region} --name "LW_API_KEY" --type "String" --value ${LaceworkAccessKeyID} --overwrite
+          aws ssm put-parameter --overwrite --region ${AWS::Region} --name "LW_API_SECRET" --type "String" --value ${LaceworkSecretKey} --overwrite
+          aws ssm put-parameter --overwrite --region ${AWS::Region} --name "ACCESS_TOKEN" --type "String" --value $accesstoken --overwrite
+          aws ssm put-parameter --overwrite --region ${AWS::Region} --name "INLINE_SCANNER_TOKEN" --type "String" --value $inline_scanner_token --overwrite
           # CONFIGURE LACEWORK TO SCAN OUR ECS REPO
           ecr_scanner_response=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/ContainerRegistries' \
           --header 'Content-Type: application/json' \
