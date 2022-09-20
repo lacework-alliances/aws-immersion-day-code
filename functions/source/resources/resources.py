@@ -121,6 +121,16 @@ def delete(event, context):
     logger.warning("Problem occurred while deleting s3 bucket: {}".format(eks_audit_bucket_exception))
 
   try:
+    code_guru_bucket_name = os.environ['code_guru_bucket']
+    logger.info("Deleting code guru s3 bucket {}".format(code_guru_bucket_name))
+    code_guru_bucket = s3.Bucket(code_guru_bucket_name)
+    code_guru_bucket.objects.delete()
+    code_guru_bucket.object_versions.delete()
+    logger.info(code_guru_bucket.delete())
+  except Exception as code_guru_bucket_exception:
+    logger.warning("Problem occurred while deleting s3 bucket: {}".format(code_guru_bucket_exception))
+
+  try:
     staging_ecr_repo = os.environ['staging_ecr_repo']
     logger.info("Deleting repositories")
     ecr_client = session.client("ecr")

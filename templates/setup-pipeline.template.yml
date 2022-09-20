@@ -28,6 +28,11 @@ Parameters:
     ConstraintDescription: Invalid Lacework account name. Account name may contain alphanumeric characters and dashes only.
 
 Resources:
+  CodeGuruArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "codeguru-reviewer-cli-${AWS::AccountId}-${AWS::Region}"
+
   PipelineArtifactBucket:
     Type: AWS::S3::Bucket
     Properties:

@@ -198,6 +198,7 @@ Resources:
         Variables:
           artifact_bucket: !Sub "${AWS::AccountId}-immers-artifact-bucket-${LaceworkAccountName}"
           lacework_bucket: !Sub "${AWS::AccountId}-laceworkcws-${LaceworkAccountName}"
+          code_guru_bucket: !Sub "codeguru-reviewer-cli-${AWS::AccountId}-${AWS::Region}"
           lambda_bucket: !Ref LambdaZipsBucket
           ransomware_bucket: !Ref RansomwareBucket
           app_bucket: !Ref AppBucket
