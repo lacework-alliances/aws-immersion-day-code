@@ -1,4 +1,5 @@
 #! /bin/bash
+# Usage: ./add_team_members.sh input.csv lw_account access_token
 while IFS=","$'\r' read -r rec1 rec2 rec3
 do
   sleep 5
