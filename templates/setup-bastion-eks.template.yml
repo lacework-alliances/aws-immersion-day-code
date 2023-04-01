@@ -12,8 +12,6 @@ Metadata:
           - LaceworkAccountName
           - LaceworkAccessKeyID
           - LaceworkSecretKey
-          - SolubleOrgID
-          - SolubleApiToken
           - KeyName
     ParameterLabels:
       VpcId:
@@ -28,10 +26,6 @@ Metadata:
         default: Lacework Access Key ID
       LaceworkSecretKey:
         default: Lacework Secret Key
-      SolubleOrgID:
-        default: Soluble Org ID
-      SolubleApiToken:
-        default: Soluble API Token
       KeyName:
         default: AWS SSH Key for Bastion
 Mappings:
@@ -102,21 +96,6 @@ Parameters:
     AllowedPattern: '^[a-zA-Z0-9_]*$'
     ConstraintDescription: Lacework API Secret Key contains alphanumeric characters and symbols only.
     Description: Lacework API Secret Key. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
-  SolubleOrgID:
-    Default: 604336610407
-    Type: String
-    MinLength: '1'
-    AllowedPattern: '^[a-zA-Z0-9_]*$'
-    ConstraintDescription: Lacework Soluble Org ID contains alphanumeric characters and symbols only.
-    Description: Lacework Soluble Org ID. See https://docs.lacework.com/iac/configure-iac-security-settings#configure-organization-settings
-  SolubleApiToken:
-    Default: eyJraWQiOiJzand0LWEyYTM1YmFlIiwiYWxnIjoiSFMyNTYifQ.eyJhdWQiOiJzZXNzaW9uIiwiZXhwIjoxOTcyOTQ3MTQyLCJpYXQiOjE2NTc1ODcxNDIsInN1YiI6InUtYjc1MDExNTMyZjBlMjYzZiJ9.L-50UiCyopIAFTpOohfS0TzKR8Tna65tPlFQQrSVUW4
-    Type: String
-    NoEcho: true
-    MinLength: '1'
-    AllowedPattern: '^[a-zA-Z0-9_@./#&+-]*$'
-    ConstraintDescription: Lacework Soluble API Token contains alphanumeric characters and symbols only.
-    Description: Lacework Soluble API Token. See https://docs.lacework.com/iac/configure-iac-security-settings#configure-token-settings
   KeyName:
     Description: The EC2 Key Pair to allow SSH access to the instances
     Type: AWS::EC2::KeyPair::KeyName
@@ -156,11 +135,7 @@ Resources:
           - Action: 'sts:AssumeRole'
             Effect: Allow
             Principal:
-              AWS: !Join
-                - ''
-                - - 'arn:aws:iam::'
-                  - '434813966438'
-                  - ':root'
+              AWS: ["434813966438"]
             Condition:
               StringEquals:
                 'sts:ExternalId': !Ref AWS::StackId
@@ -187,7 +162,7 @@ Resources:
           #!/bin/bash
           set -o xtrace
           pwd
-          yum install -y python3 python3-pip tar openssh-server vim-minimal bash-completion jq at && yum clean all
+          yum install -y git python3 python3-pip tar openssh-server vim-minimal bash-completion jq at && yum clean all
           #INSTALL LATEST AWS CLI
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           unzip awscliv2.zip
@@ -217,16 +192,16 @@ Resources:
           "tokenAlias": "aws-immersion-day-ec2-${AWS::StackId}"
           }' | jq -r '.data.accessToken')
           # CREATE AND WAIT FOR THE EKC CLUSTER
-          curl -o kubectl https://s3.us-west-2.amazonaws.com/amazon-eks/1.22.6/2022-03-09/bin/linux/amd64/kubectl && \
+          curl -o kubectl curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.25.7/2023-03-17/bin/linux/amd64/kubectl.sha256 && \
               chmod +x ./kubectl && \
               mkdir -p $HOME/bin && cp ./kubectl $HOME/bin/kubectl && export PATH=$PATH:$HOME/bin && \
               echo 'export PATH=$PATH:$HOME/bin' >> ~/.bashrc && \
-              curl -o /usr/local/bin/aws-iam-authenticator https://amazon-eks.s3.us-west-2.amazonaws.com/1.21.2/2021-07-05/bin/linux/amd64/aws-iam-authenticator && \
+              curl -Lo aws-iam-authenticator https://github.com/kubernetes-sigs/aws-iam-authenticator/releases/download/v0.5.9/aws-iam-authenticator_0.5.9_linux_amd64  && \
               chmod +x /usr/local/bin/aws-iam-authenticator && \
               curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp && \
               sudo mv /tmp/eksctl /usr/local/bin
           eksctl create cluster --name ${AWS::AccountId}-eks-${LaceworkAccountName} --region ${AWS::Region} --ssh-access --ssh-public-key ${KeyName}
-          timeout 10m bash -c -- 'while [ -z "$status" ] || [ "$status" != "\"ACTIVE\"" ]; do status=$(aws eks --region ${AWS::Region} describe-cluster --name ${AWS::AccountId}-eks --query cluster.status);echo $status; sleep 2; done'
+          timeout 10m bash -c -- 'while [ -z "$status" ] || [ "$status" != "\"ACTIVE\"" ]; do status=$(aws eks --region ${AWS::Region} describe-cluster --name ${AWS::AccountId}-eks-${LaceworkAccountName} --query cluster.status);echo $status; sleep 2; done'
           # GET AN INLINE SCANNER TOKEN FROM LACEWORK
           inline_scanner_token=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/ContainerRegistries' \
           --header 'Content-Type: application/json' \
@@ -242,14 +217,12 @@ Resources:
           }' | jq -r '.data.serverToken.serverToken')
           echo $inline_scanner_token
           # STORE THE SCANNER AND ECS LACEWORK TOKENS IN SSM
-          aws ssm put-parameter --overwrite --region ${AWS::Region} --name "SOLUBLE_ORG_ID" --type "String" --value ${SolubleOrgID} --overwrite
-          aws ssm put-parameter --overwrite --region ${AWS::Region} --name "SOLUBLE_API_TOKEN" --type "String" --value ${SolubleApiToken} --overwrite
           aws ssm put-parameter --overwrite --region ${AWS::Region} --name "LW_ACCOUNT" --type "String" --value ${LaceworkAccountName} --overwrite
           aws ssm put-parameter --overwrite --region ${AWS::Region} --name "LW_API_KEY" --type "String" --value ${LaceworkAccessKeyID} --overwrite
           aws ssm put-parameter --overwrite --region ${AWS::Region} --name "LW_API_SECRET" --type "String" --value ${LaceworkSecretKey} --overwrite
           aws ssm put-parameter --overwrite --region ${AWS::Region} --name "ACCESS_TOKEN" --type "String" --value $accesstoken --overwrite
           aws ssm put-parameter --overwrite --region ${AWS::Region} --name "INLINE_SCANNER_TOKEN" --type "String" --value $inline_scanner_token --overwrite
-          # CONFIGURE LACEWORK TO SCAN OUR ECS REPO
+          # CONFIGURE LACEWORK TO SCAN OUR ECR REPO
           ecr_scanner_response=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/ContainerRegistries' \
           --header 'Content-Type: application/json' \
           --header "Authorization: Bearer $accesstoken" \
@@ -275,9 +248,10 @@ Resources:
           echo $ecr_scanner_response
           # SETUP THE LACEWORK AGENT ON THE EKS CLUSTER
           aws eks --region ${AWS::Region} update-kubeconfig --name ${AWS::AccountId}-eks-${LaceworkAccountName}
-          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > get_helm.sh
           chmod 700 get_helm.sh
           ./get_helm.sh
+          helm version --short | cut -d + -f 1
           helm repo add lacework https://lacework.github.io/helm-charts/
           helm upgrade --install --namespace lacework --create-namespace --set laceworkConfig.accessToken=$eks_agent_token --set laceworkConfig.kubernetesCluster=${AWS::AccountId}-eks-${LaceworkAccountName} --set laceworkConfig.env=${AWS::AccountId}-eks-${LaceworkAccountName} lacework-agent lacework/lacework-agent
           # SETUP THE LACEWORK AGENT ON THIS HOST

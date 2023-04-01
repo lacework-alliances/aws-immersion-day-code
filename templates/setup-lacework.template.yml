@@ -237,11 +237,7 @@ Resources:
           - Action: 'sts:AssumeRole'
             Effect: Allow
             Principal:
-              AWS: !Join
-                - ''
-                - - 'arn:aws:iam::'
-                  - '434813966438'
-                  - ':root'
+              AWS: ["434813966438"]
             Condition:
               StringEquals:
                 'sts:ExternalId': !Ref ExternalID

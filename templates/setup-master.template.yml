@@ -41,35 +41,20 @@ Parameters:
     AllowedPattern: '^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$'
     ConstraintDescription: Invalid Lacework account name. Account name may contain alphanumeric characters and dashes only.
   LaceworkAccessKeyID:
-    Default: LACEWORK_EA14D831DCC8255D89869D62D323FD0CC60263DED268DFE
+    Default: LACEWORK_11AE3CDA28BFB04B32A9660D13C1E0CC2EBBBE39FF1A8C3
     Type: String
     MinLength: '1'
     AllowedPattern: '^[a-zA-Z0-9_]*$'
     ConstraintDescription: Lacework API Access Key ID contains alphanumeric characters and symbols only.
     Description: Lacework API Secret Key ID. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
   LaceworkSecretKey:
-    Default: _ee5d74f7337b852e9b6b7da637bff89b
+    Default: _ba389304be405ffb9275ea273abcce76
     Type: String
     NoEcho: true
     MinLength: '1'
     AllowedPattern: '^[a-zA-Z0-9_]*$'
     ConstraintDescription: Lacework API Secret Key contains alphanumeric characters and symbols only.
     Description: Lacework API Secret Key. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
-  SolubleOrgID:
-    Default: 604336610407
-    Type: String
-    MinLength: '1'
-    AllowedPattern: '^[a-zA-Z0-9_]*$'
-    ConstraintDescription: Lacework Soluble Org ID contains alphanumeric characters and symbols only.
-    Description: Lacework Soluble Org ID. See https://docs.lacework.com/iac/configure-iac-security-settings#configure-organization-settings
-  SolubleApiToken:
-    Default: eyJraWQiOiJzand0LWEyYTM1YmFlIiwiYWxnIjoiSFMyNTYifQ.eyJhdWQiOiJzZXNzaW9uIiwiZXhwIjoxOTcyOTQ3MTQyLCJpYXQiOjE2NTc1ODcxNDIsInN1YiI6InUtYjc1MDExNTMyZjBlMjYzZiJ9.L-50UiCyopIAFTpOohfS0TzKR8Tna65tPlFQQrSVUW4
-    Type: String
-    NoEcho: true
-    MinLength: '1'
-    AllowedPattern: '^[a-zA-Z0-9_@./#&+-]*$'
-    ConstraintDescription: Lacework Soluble API Token contains alphanumeric characters and symbols only.
-    Description: Lacework Soluble API Token. See https://docs.lacework.com/iac/configure-iac-security-settings#configure-token-settings
   KeyName:
     Default: ee-default-keypair
     Description: The EC2 Key Pair to allow SSH access to the bastion host.
@@ -108,8 +93,6 @@ Resources:
         LaceworkAccountName: !Ref LaceworkAccountName
         LaceworkAccessKeyID: !Ref LaceworkAccessKeyID
         LaceworkSecretKey: !Ref LaceworkSecretKey
-        SolubleOrgID: !Ref SolubleOrgID
-        SolubleApiToken: !Ref SolubleApiToken
         KeyName: !Ref KeyName
 
   Lacework:
