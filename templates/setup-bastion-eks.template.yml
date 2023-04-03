@@ -192,12 +192,13 @@ Resources:
           "tokenAlias": "aws-immersion-day-ec2-${AWS::StackId}"
           }' | jq -r '.data.accessToken')
           # CREATE AND WAIT FOR THE EKC CLUSTER
-          curl -o kubectl curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.25.7/2023-03-17/bin/linux/amd64/kubectl.sha256 && \
+          curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.25.7/2023-03-17/bin/linux/amd64/kubectl  && \
               chmod +x ./kubectl && \
               mkdir -p $HOME/bin && cp ./kubectl $HOME/bin/kubectl && export PATH=$PATH:$HOME/bin && \
               echo 'export PATH=$PATH:$HOME/bin' >> ~/.bashrc && \
               curl -Lo aws-iam-authenticator https://github.com/kubernetes-sigs/aws-iam-authenticator/releases/download/v0.5.9/aws-iam-authenticator_0.5.9_linux_amd64  && \
-              chmod +x /usr/local/bin/aws-iam-authenticator && \
+              chmod +x aws-iam-authenticator && \
+              mkdir -p $HOME/bin && cp ./aws-iam-authenticator $HOME/bin/aws-iam-authenticator && export PATH=$PATH:$HOME/bin && \
               curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp && \
               sudo mv /tmp/eksctl /usr/local/bin
           eksctl create cluster --name ${AWS::AccountId}-eks-${LaceworkAccountName} --region ${AWS::Region} --ssh-access --ssh-public-key ${KeyName}
