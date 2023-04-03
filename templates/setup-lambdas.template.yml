@@ -39,7 +39,7 @@ Resources:
   RansomwareBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Join [ "-", [ !Sub "${AWS::AccountId}-ransomware-bucket", !Select [ 4, !Split [ '-', !Select [ 2, !Split [ '/', !Ref AWS::StackId ] ] ] ] ] ]
+      BucketName: !Sub "${AWS::AccountId}-ransomware-bucket-${LaceworkAccountName}"
       AccessControl: PublicReadWrite
 
   AppBucket:

@@ -9,8 +9,6 @@ Metadata:
           - LaceworkAccountName
           - LaceworkAccessKeyID
           - LaceworkSecretKey
-          - SolubleOrgID
-          - SolubleApiToken
       - Label:
           default: "Advanced Configuration"
         Parameters:
@@ -23,10 +21,6 @@ Metadata:
         default: Lacework Access Key ID
       LaceworkSecretKey:
         default: Lacework Secret Key
-      SolubleOrgID:
-        default: Lacework Soluble Org ID
-      SolubleApiToken:
-        default: Lacework Soluble API Token
       S3BucketName:
         default: CloudFormation S3 Bucket
       S3KeyPrefix:

@@ -8,6 +8,8 @@ phases:
   install:
     commands:
       - curl https://raw.githubusercontent.com/lacework/go-sdk/master/cli/install.sh | bash
+      - lacework components list
+      - lacework component install iac
   build:
     commands:
       - export LW_ACCOUNT=$LW_ACCOUNT
