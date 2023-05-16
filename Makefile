@@ -11,7 +11,7 @@ SCRIPTS_PREFIX := scripts
 CFT_PREFIX := templates
 CFT_DIR := templates
 
-PROFILE ?= ct
+PROFILE ?= default
 REGION ?= us-west-2
 
 BUCKET_NAME ?= service_not_defined

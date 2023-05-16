@@ -40,7 +40,8 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub "${AWS::AccountId}-ransomware-bucket-${LaceworkAccountName}"
-      AccessControl: PublicReadWrite
+      VersioningConfiguration:
+        Status: Suspended
 
   AppBucket:
     Type: AWS::S3::Bucket
@@ -73,7 +74,7 @@ Resources:
       DestBucket: !Ref 'RansomwareBucket'
       SourceBucket: !Ref 'S3BucketName'
       Prefix: !Ref 'S3KeyPrefix'
-      Acl: 'public-read-write'
+      Acl: 'bucket-owner-full-control'
       Objects:
         - '/app/app.zip'
 

@@ -35,7 +35,7 @@ Parameters:
       Names of resources created by the stack will be prefixed with this value
       to ensure uniqueness.
     Type: String
-    Default: lwintawsimmersionday
+    Default: laceworkshop
     MinLength: '1'
     MaxLength: '45'
     AllowedPattern: '^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$'
