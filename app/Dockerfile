@@ -1,4 +1,4 @@
-FROM public.ecr.aws/ews-network/amazoncorretto:8
+FROM amazoncorretto
 
 LABEL maintainer="jeff.fry@lacework.net"
 

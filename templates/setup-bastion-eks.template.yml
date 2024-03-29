@@ -181,7 +181,7 @@ Resources:
           --header "Authorization: Bearer $accesstoken" \
           --data-raw '{
           "tokenEnabled": "1",
-          "tokenAlias": "aws-immersion-day-eks-${AWS::StackId}"
+          "tokenAlias": "${AWS::AccountId}-awsimmersionday-eks-${AWS::StackId}"
           }' | jq -r '.data.accessToken')
           # GET A EC2 AGENT TOKEN FROM LACEWORK
           ec2_agent_token=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/AgentAccessTokens' \
@@ -189,7 +189,7 @@ Resources:
           --header "Authorization: Bearer $accesstoken" \
           --data-raw '{
           "tokenEnabled": "1",
-          "tokenAlias": "aws-immersion-day-ec2-${AWS::StackId}"
+          "tokenAlias": "{AWS::AccountId}-awsimmersionday-ec2-${AWS::StackId}"
           }' | jq -r '.data.accessToken')
           # CREATE AND WAIT FOR THE EKC CLUSTER
           curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.25.7/2023-03-17/bin/linux/amd64/kubectl  && \
@@ -203,6 +203,8 @@ Resources:
               sudo mv /tmp/eksctl /usr/local/bin
           eksctl create cluster --name ${AWS::AccountId}-eks-${LaceworkAccountName} --region ${AWS::Region} --ssh-access --ssh-public-key ${KeyName}
           timeout 10m bash -c -- 'while [ -z "$status" ] || [ "$status" != "\"ACTIVE\"" ]; do status=$(aws eks --region ${AWS::Region} describe-cluster --name ${AWS::AccountId}-eks-${LaceworkAccountName} --query cluster.status);echo $status; sleep 2; done'
+          # SET UP EKS AUDIT LOGGING
+          aws eks --region ${AWS::Region} update-cluster-config --name ${AWS::AccountId}-eks-${LaceworkAccountName} --logging '{"clusterLogging":[{"types":["audit"],"enabled":true}]}'
           # GET AN INLINE SCANNER TOKEN FROM LACEWORK
           inline_scanner_token=$(curl --location --request POST 'https://${LaceworkAccountName}.lacework.net/api/v2/ContainerRegistries' \
           --header 'Content-Type: application/json' \

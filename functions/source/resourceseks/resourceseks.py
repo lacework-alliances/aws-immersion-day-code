@@ -16,12 +16,12 @@
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 import json
-
-import boto3
 import logging
 import os
 
+import boto3
 import urllib3
+from builtins import Exception, str, len
 from crhelper import CfnResource
 
 SUCCESS = "SUCCESS"
@@ -52,7 +52,6 @@ def lambda_handler(event, context):
 def create(event, context):
   logger.info("resources.create called and does nothing right now.")
   send_cfn_response(event, context, SUCCESS, {})
-  # add honeycomb telemetry
 
 
 @helper.delete

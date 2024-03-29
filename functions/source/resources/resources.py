@@ -61,16 +61,6 @@ def delete(event, context):
 
   s3 = boto3.resource('s3')
   try:
-    ransomware_bucket_name = os.environ['ransomware_bucket']
-    logger.info("Deleting ransomware s3 bucket {}".format(ransomware_bucket_name))
-    ransomware_bucket = s3.Bucket(ransomware_bucket_name)
-    ransomware_bucket.objects.delete()
-    ransomware_bucket.object_versions.delete()
-    logger.info(ransomware_bucket.delete())
-  except Exception as delete_ransomware_bucket_exception:
-    logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_ransomware_bucket_exception))
-
-  try:
     lambda_bucket_name = os.environ['lambda_bucket']
     logger.info("Deleting lambda s3 bucket {}".format(lambda_bucket_name))
     lambda_bucket = s3.Bucket(lambda_bucket_name)
@@ -111,28 +101,8 @@ def delete(event, context):
     logger.warning("Problem occurred while deleting s3 bucket: {}".format(delete_artifact_bucket_exception))
 
   try:
-    eks_audit_bucket_name = os.environ['eks_audit_bucket']
-    logger.info("Deleting eks audit s3 bucket {}".format(eks_audit_bucket_name))
-    eks_audit_bucket = s3.Bucket(eks_audit_bucket_name)
-    eks_audit_bucket.objects.delete()
-    eks_audit_bucket.object_versions.delete()
-    logger.info(eks_audit_bucket.delete())
-  except Exception as eks_audit_bucket_exception:
-    logger.warning("Problem occurred while deleting s3 bucket: {}".format(eks_audit_bucket_exception))
-
-  try:
-    code_guru_bucket_name = os.environ['code_guru_bucket']
-    logger.info("Deleting code guru s3 bucket {}".format(code_guru_bucket_name))
-    code_guru_bucket = s3.Bucket(code_guru_bucket_name)
-    code_guru_bucket.objects.delete()
-    code_guru_bucket.object_versions.delete()
-    logger.info(code_guru_bucket.delete())
-  except Exception as code_guru_bucket_exception:
-    logger.warning("Problem occurred while deleting s3 bucket: {}".format(code_guru_bucket_exception))
-
-  try:
     staging_ecr_repo = os.environ['staging_ecr_repo']
-    logger.info("Deleting repositories")
+    logger.info("Deleting staging repository {}".format(staging_ecr_repo))
     ecr_client = session.client("ecr")
     aws_account_id = context.invoked_function_arn.split(":")[4]
     logger.info(ecr_client.delete_repository(
@@ -145,6 +115,7 @@ def delete(event, context):
 
   try:
     prod_ecr_repo = os.environ['prod_ecr_repo']
+    logger.info("Deleting prod repository {}".format(prod_ecr_repo))
     logger.info(ecr_client.delete_repository(
       registryId=aws_account_id,
       repositoryName=prod_ecr_repo,

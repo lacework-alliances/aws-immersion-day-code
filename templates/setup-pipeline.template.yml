@@ -28,15 +28,16 @@ Parameters:
     ConstraintDescription: Invalid Lacework account name. Account name may contain alphanumeric characters and dashes only.
 
 Resources:
-  CodeGuruArtifactBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub "codeguru-reviewer-cli-${AWS::AccountId}-${AWS::Region}"
-
   PipelineArtifactBucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
     Properties:
-      BucketName: !Sub "${AWS::AccountId}-immers-artifact-bucket-${LaceworkAccountName}"
+      BucketName: !Join
+        - '-'
+        - - !Ref AWS::AccountId
+          - 'immers-artifact-bucket'
+          - !Ref LaceworkAccountName
+          - !Join ['',['lw',!Select [ 0, !Split [ '-', !Select [ 2, !Split [ '/', !Ref AWS::StackId ] ] ] ] ] ]
 
   StagingECRDemoAppRepository:
     Type: AWS::ECR::Repository
@@ -47,6 +48,21 @@ Resources:
     Type: AWS::ECR::Repository
     Properties:
       RepositoryName: "prod-demo-app"
+
+  AppRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: AppRepo
+      RepositoryDescription: This is a repository for the app.
+      Code:
+        BranchName: main
+        S3:
+          Bucket: !Join
+            - '-'
+            - - !Ref AWS::AccountId
+              - 'immers-app-bucket'
+              - !Ref LaceworkAccountName
+          Key: !Sub "${S3KeyPrefix}/app/app.zip"
 
   SecuredPipeline:
     Type: AWS::CodePipeline::Pipeline
@@ -64,29 +80,15 @@ Resources:
                 Category: Source
                 Owner: AWS
                 Version: 1
-                Provider: S3
+                Provider: CodeCommit
               Configuration:
-                S3Bucket: !Sub "${AWS::AccountId}-app-bucket-${LaceworkAccountName}"
-                S3ObjectKey: !Sub "${S3KeyPrefix}/app/app.zip"
-                PollForSourceChanges: false
+                BranchName: main
+                OutputArtifactFormat: CODEBUILD_CLONE_REF
+                PollForSourceChanges: 'false'
+                RepositoryName: AppRepo
               OutputArtifacts:
                 - Name: App
               RunOrder: 1
-        - Name: ScanCode
-          Actions:
-            - Name: ScanCode
-              ActionTypeId:
-                Category: Test
-                Owner: AWS
-                Version: 1
-                Provider: CodeBuild
-              Configuration:
-                ProjectName: !Ref CodeBuildScanCodeProject
-              InputArtifacts:
-                - Name: App
-              OutputArtifacts:
-                - Name: CodeScanOutput
-              RunOrder: 2
         - Name: ScanIaC
           Actions:
             - Name: ScanIaC
@@ -101,7 +103,7 @@ Resources:
                 - Name: App
               OutputArtifacts:
                 - Name: IaCScanOutput
-              RunOrder: 3
+              RunOrder: 2
         - Name: BuildScanPush
           Actions:
             - Name: BuildScanPush
@@ -116,7 +118,7 @@ Resources:
                 - Name: App
               OutputArtifacts:
                 - Name: BuildScanPushOutput
-              RunOrder: 4
+              RunOrder: 3
         - Name: ScanStagingImage
           Actions:
             - Name: ScanStagingImage
@@ -131,7 +133,7 @@ Resources:
                 - Name: App
               OutputArtifacts:
                 - Name: ScanStagingImage
-              RunOrder: 5
+              RunOrder: 4
         - Name: DeployToStaging
           Actions:
             - Name: DeployToStaging
@@ -146,7 +148,7 @@ Resources:
                 - Name: App
               OutputArtifacts:
                 - Name: DeployStagingOutput
-              RunOrder: 6
+              RunOrder: 5
         - Name: ScanStagingConfig
           Actions:
             - Name: ScanStagingConfig
@@ -159,7 +161,7 @@ Resources:
                 ProjectName: !Ref CodeBuildScanStagingConfigProject
               InputArtifacts:
                 - Name: App
-              RunOrder: 7
+              RunOrder: 6
         - Name: ApprovalStage
           Actions:
             - Name: ApprovalStage
@@ -168,7 +170,7 @@ Resources:
                 Owner: AWS
                 Version: 1
                 Provider: Manual
-              RunOrder: 8
+              RunOrder: 7
         - Name: PromoteToProductionRepo
           Actions:
             - Name: PromoteToProductionRepo
@@ -183,7 +185,7 @@ Resources:
                 - Name: App
               OutputArtifacts:
                 - Name: PromoteProductionRepoOutput
-              RunOrder: 9
+              RunOrder: 8
         - Name: ScanProductionImage
           Actions:
             - Name: ScanProductionImage
@@ -198,7 +200,7 @@ Resources:
                 - Name: App
               OutputArtifacts:
                 - Name: ScanProductionImageOutput
-              RunOrder: 10
+              RunOrder: 9
         - Name: DeployToProduction
           Actions:
             - Name: DeployToProduction
@@ -213,24 +215,7 @@ Resources:
                 - Name: App
               OutputArtifacts:
                 - Name: DeployProductionOutput
-              RunOrder: 11
-
-  CodeBuildScanCodeProject:
-    Type: AWS::CodeBuild::Project
-    Properties:
-      Name: ScanCode
-      Description: "Scan Code"
-      Artifacts:
-        Type: CODEPIPELINE
-      Source:
-        Type: CODEPIPELINE
-        BuildSpec: "codebuild-scan-code.yaml"
-      Environment:
-        ComputeType: "BUILD_GENERAL1_SMALL"
-        Image: "aws/codebuild/standard:5.0"
-        Type: "LINUX_CONTAINER"
-        PrivilegedMode: true
-      ServiceRole: !Ref CodeBuildServiceRole
+              RunOrder: 10
 
   CodeBuildScanIaCProject:
     Type: AWS::CodeBuild::Project
@@ -272,7 +257,33 @@ Resources:
           - Name: DOCKER_REG
             Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
       ServiceRole: !Ref CodeBuildServiceRole
+      Cache:
+        Type: LOCAL
+        Modes: # You can specify one or more cache mode,
+          - LOCAL_CUSTOM_CACHE
+          - LOCAL_DOCKER_LAYER_CACHE
+          - LOCAL_SOURCE_CACHE
 
+  CodeBuildScanEcrProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: ScanEcr
+      Description: "Scan Staging Image"
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: "codebuild-scan-ecr.yaml"
+      Environment:
+        ComputeType: "BUILD_GENERAL1_SMALL"
+        Image: "aws/codebuild/standard:5.0"
+        Type: "LINUX_CONTAINER"
+        EnvironmentVariables:
+          - Name: IMAGE_NAME
+            Value: "staging-demo-app"
+          - Name: DOCKER_REG
+            Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
+      ServiceRole: !Ref CodeBuildServiceRole
   CodeBuildScanStagingImageProject:
     Type: AWS::CodeBuild::Project
     Properties:
@@ -292,6 +303,35 @@ Resources:
             Value: "staging-demo-app"
           - Name: DOCKER_REG
             Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
+      ServiceRole: !Ref CodeBuildServiceRole
+
+  CodeBuildDeployProductionProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: DeployToProduction
+      Description: "Deploy to Production"
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: "codebuild-deploy-prod.yaml"
+      Environment:
+        ComputeType: "BUILD_GENERAL1_SMALL"
+        Image: "aws/codebuild/standard:5.0"
+        Type: "LINUX_CONTAINER"
+        EnvironmentVariables:
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_REGION
+            Value: !Ref AWS::Region
+          - Name: DOCKER_REG
+            Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com"
+          - Name: EKS_CLUSTER
+            Value: !Sub "${AWS::AccountId}-eks-${LaceworkAccountName}"
+          - Name: IMAGE_NAME
+            Value: "prod-demo-app"
+          - Name: IMAGE_TAG
+            Value: "latest"
       ServiceRole: !Ref CodeBuildServiceRole
 
   CodeBuildDeployStagingProject:
@@ -393,16 +433,16 @@ Resources:
             Value: "latest"
       ServiceRole: !Ref CodeBuildServiceRole
 
-  CodeBuildDeployProductionProject:
+  CodeBuildDeployProject:
     Type: AWS::CodeBuild::Project
     Properties:
-      Name: DeployToProduction
-      Description: "Deploy to Production"
+      Name: Deploy
+      Description: "Deploy"
       Artifacts:
         Type: CODEPIPELINE
       Source:
         Type: CODEPIPELINE
-        BuildSpec: "codebuild-deploy-prod.yaml"
+        BuildSpec: "codebuild-deploy.yaml"
       Environment:
         ComputeType: "BUILD_GENERAL1_SMALL"
         Image: "aws/codebuild/standard:5.0"
@@ -417,7 +457,7 @@ Resources:
           - Name: EKS_CLUSTER
             Value: !Sub "${AWS::AccountId}-eks-${LaceworkAccountName}"
           - Name: IMAGE_NAME
-            Value: "prod-demo-app"
+            Value: "staging-demo-app"
           - Name: IMAGE_TAG
             Value: "latest"
       ServiceRole: !Ref CodeBuildServiceRole
@@ -475,6 +515,12 @@ Resources:
                 Resource: '*'
               - Effect: Allow
                 Action:
+                  - codecommit:GetRepository
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                Resource: '*'
+              - Effect: Allow
+                Action:
                   - codebuild:BatchGetBuilds
                   - codebuild:StartBuild
                 Resource: '*'
@@ -529,7 +575,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - s3:*
-                Resource: "*"
+                Resource: '*'
               - Effect: Allow
                 Action:
                   - sts:AssumeRole
@@ -540,27 +586,8 @@ Resources:
                   - ssm:GetParameters
                 Resource:
                   - !Join [ '', [ 'arn:aws:ssm:*:', !Ref 'AWS::AccountId', ':parameter/*' ] ]
-              - Effect: Allow
-                Action:
-                  - codeguru-reviewer:ListRepositoryAssociations
-                  - codeguru-reviewer:AssociateRepository
-                  - codeguru-reviewer:DescribeRepositoryAssociation
-                  - codeguru-reviewer:CreateCodeReview
-                  - codeguru-reviewer:DescribeCodeReview
-                  - codeguru-reviewer:ListRecommendations
-                  - iam:CreateServiceLinkedRole
-                Resource: "*"
-              - Effect: Allow
-                Action:
-                  - s3:CreateBucket
-                  - s3:GetBucket*
-                  - s3:List*
-                  - s3:GetObject
-                  - s3:PutObject
-                  - s3:DeleteObject
-                Resource:
-                  - "arn:aws:s3:::codeguru-reviewer-*"
-                  - "arn:aws:s3:::codeguru-reviewer-*/*"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSCodeCommitReadOnly
 
   EksCodeBuildKubectlRole:
     Type: AWS::IAM::Role

@@ -1,0 +1,10 @@
+version: 0.2
+phases:
+  install:
+    commands:
+      - echo "Install Commands"
+  build:
+    commands:
+      - echo "Build Commands"
+
+

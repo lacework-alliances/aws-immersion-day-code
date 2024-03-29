@@ -1,12 +1,14 @@
-AWSTemplateFormatVersion: 2010-09-09
+AWSTemplateFormatVersion: '2010-09-09'
 Description: Lacework AWS CloudTrail and Config Security Audit Integration
 Metadata:
-  'AWS::CloudFormation::Interface':
+  AWS::CloudFormation::Interface:
     ParameterGroups:
       - Parameters:
           - ResourceNamePrefix
           - ExternalID
           - CreateTrail
+          - ApiToken
+          - KmsKeyRotation
       - Label:
           default: New Trail Options
         Parameters:
@@ -23,25 +25,25 @@ Metadata:
         default: ExternalID
       CreateTrail:
         default: Create new trail?
+      ApiToken:
+        default: API Token
       NewTrailLogFilePrefix:
         default: Log file prefix
       ExistingTrailBucketName:
         default: Bucket name
       ExistingTrailTopicArn:
         default: Topic ARN
+      KmsKeyRotation:
+        default: Enable Kms Key Rotation
 Parameters:
   ResourceNamePrefix:
-    Description: >-
-      Names of resources created by the stack will be prefixed with this value
-      to ensure uniqueness.
+    Description: Names of resources created by the stack will be prefixed with this value to ensure uniqueness.
     Type: String
     Default: laceworkshop
     MinLength: '1'
     MaxLength: '45'
-    AllowedPattern: '^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$'
-    ConstraintDescription: >-
-      Invalid resource name prefix value.  Must match pattern
-      ^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$
+    AllowedPattern: ^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$
+    ConstraintDescription: Invalid resource name prefix value.  Must match pattern ^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$
   ExternalID:
     Description: >-
       The cross-account access role created by the stack will use this value for
@@ -50,28 +52,28 @@ Parameters:
     Default: 2D1C019
     MinLength: '2'
     MaxLength: '1224'
+  ApiToken:
+    Description: The token required for making API requests with Lacework.
+    Type: String
+    Default: 96E7882F7233F453B348EF4C33CF701AA499F02D49927DD700A04A56
+    MinLength: '1'
+    ConstraintDescription: A valid API Token is required
   CreateTrail:
-    Description: >-
-      You can have a new multi-region CloudTrail trail be created (along with a
-      new S3 bucket and SNS topic), or use your existing trail setup.
+    Description: You can have a new multi-region CloudTrail trail be created (along with a new S3 bucket and SNS topic), or use your existing trail setup.
     Type: String
     AllowedValues:
       - 'Yes'
       - 'No'
     Default: 'Yes'
   NewTrailLogFilePrefix:
-    Description: >-
-      If you want the new trail to prefix its log file names, provide the prefix
-      to use.  Otherwise, leave it blank.
+    Description: If you want the new trail to prefix its log file names, provide the prefix to use.  Otherwise, leave it blank.
     Default: ''
     Type: String
     MaxLength: '64'
     AllowedPattern: '[a-zA-Z0-9-_.!()* ]*'
-    ConstraintDescription: 'Invalid log file prefix.  Must match pattern [a-zA-Z0-9-_.!()* ]*'
+    ConstraintDescription: Invalid log file prefix.  Must match pattern [a-zA-Z0-9-_.!()* ]*
   ExistingTrailBucketName:
-    Description: >-
-      Provide the name of the S3 bucket for your existing trail setup.  The
-      bucket must be owned by the current account.
+    Description: Provide the name of the S3 bucket for your existing trail setup.  The bucket must be owned by the current account.
     Default: ''
     Type: String
     MaxLength: '128'
@@ -80,6 +82,13 @@ Parameters:
     Default: ''
     Type: String
     MaxLength: '256'
+  KmsKeyRotation:
+    Description: Enables automatic rotation of the key material for the specified KMS key.
+    Type: String
+    AllowedValues:
+      - true
+      - false
+    Default: true
 Conditions:
   CreateNewTrail: !Equals
     - !Ref CreateTrail
@@ -93,22 +102,159 @@ Conditions:
       - !Ref NewTrailLogFilePrefix
       - ''
 Resources:
+  LaceworkLogs:
+    Condition: CreateNewTrail
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: LogDeliveryWrite
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: ObjectWriter
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt LaceworkKmsKey.Arn
+      VersioningConfiguration:
+        Status: Enabled
   LaceworkCWSBucket:
     Condition: CreateNewTrail
-    Type: 'AWS::S3::Bucket'
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
     Properties:
-      BucketName: !Sub "${AWS::AccountId}-laceworkcws-${ResourceNamePrefix}"
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: ObjectWriter
+      BucketName: !Join
+        - '-'
+        - - !Ref AWS::AccountId
+          - 'lacework-cws'
+          - !Ref ResourceNamePrefix
+          - !Join ['',['lw',!Select [ 0, !Split [ '-', !Select [ 2, !Split [ '/', !Ref AWS::StackId ] ] ] ] ] ]
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt LaceworkKmsKey.Arn
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LaceworkLogs
+        LogFilePrefix: lacework-logging
+      VersioningConfiguration:
+        Status: Enabled
+  LaceworkKmsKey:
+    Type: AWS::KMS::Key
+    DependsOn: LaceworkCWSSACrossAccountAccessRole
+    Properties:
+      Description: Lacework Kms Key
+      EnableKeyRotation: !Ref KmsKeyRotation
+      Enabled: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: Key policy created by CloudTrail
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Join
+                  - ''
+                  - - 'arn:aws:iam::'
+                    - !Ref AWS::AccountId
+                    - ':root'
+            Action: kms:*
+            Resource: '*'
+          - Sid: Allow CloudTrail to encrypt logs
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: kms:GenerateDataKey*
+            Resource: '*'
+          - Sid: Allow CloudTrail to encrypt logs
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: kms:GenerateDataKey*
+            Resource: '*'
+          - Sid: Allow CloudTrail to describe key
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: kms:DescribeKey
+            Resource: '*'
+          - Sid: Allow SNS service to encrypt/decrypt
+            Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action:
+              - kms:GenerateDataKey*
+              - kms:Decrypt
+            Resource: '*'
+          - Sid: Allow Lacework to decrypt logs
+            Effect: Allow
+            Principal:
+              AWS: !Join
+                - ''
+                - - 'arn:aws:iam::'
+                  - !Ref AWS::AccountId
+                  - ':role/'
+                  - !Ref ResourceNamePrefix
+                  - '-laceworkcwssarole'
+            Action:
+              - kms:Decrypt
+            Resource: '*'
+          - Sid: Enable cross account log decryption
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Join
+                  - ''
+                  - - 'arn:aws:iam::'
+                    - !Ref AWS::AccountId
+                    - ':root'
+            Action:
+              - kms:Decrypt
+              - kms:ReEncryptFrom
+            Resource: '*'
+            Condition:
+              StringLike:
+                kms:EncryptionContext:aws:cloudtrail:arn:
+                  - !Join
+                    - ''
+                    - - 'arn:aws:cloudtrail:*:'
+                      - !Ref AWS::AccountId
+                      - ':trail/*'
+      MultiRegion: true
+  LaceworkCWSLogBucketPolicy:
+    Condition: CreateNewTrail
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref LaceworkLogs
+      PolicyDocument:
+        Version: '2012-10-17'
+        Id: LaceworkCWSBucketPolicy
+        Statement:
+          - Sid: DenyUnSecureCommunications
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref LaceworkLogs
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
   LaceworkCWSBucketPolicy:
     Condition: CreateNewTrail
-    Type: 'AWS::S3::BucketPolicy'
+    Type: AWS::S3::BucketPolicy
     Properties:
       Bucket: !Ref LaceworkCWSBucket
       PolicyDocument:
-        Version: 2012-10-17
+        Version: '2012-10-17'
         Id: LaceworkCWSBucketPolicy
         Statement:
           - Sid: CloudTrailAclCheck
-            Action: 's3:GetBucketAcl'
+            Action: s3:GetBucketAcl
             Effect: Allow
             Resource: !Join
               - ''
@@ -116,8 +262,19 @@ Resources:
                 - !Ref LaceworkCWSBucket
             Principal:
               Service: cloudtrail.amazonaws.com
+          - Sid: DenyUnSecureCommunications
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref LaceworkCWSBucket
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
           - Sid: CloudTrailWrite
-            Action: 's3:PutObject'
+            Action: s3:PutObject
             Effect: Allow
             Resource: !Join
               - ''
@@ -131,18 +288,16 @@ Resources:
                       - !Ref NewTrailLogFilePrefix
                   - ''
                 - /AWSLogs/
-                - !Ref 'AWS::AccountId'
+                - !Ref AWS::AccountId
                 - /*
             Principal:
               Service: cloudtrail.amazonaws.com
             Condition:
               StringEquals:
-                's3:x-amz-acl': bucket-owner-full-control
-              Bool:
-                'aws:SecureTransport': 'true'
+                s3:x-amz-acl: bucket-owner-full-control
   LaceworkCWSTopic:
     Condition: CreateNewTrail
-    Type: 'AWS::SNS::Topic'
+    Type: AWS::SNS::Topic
     Properties:
       TopicName: !Join
         - ''
@@ -150,13 +305,13 @@ Resources:
           - '-laceworkcws'
   LaceworkCWSTopicPolicy:
     Condition: CreateNewTrail
-    Type: 'AWS::SNS::TopicPolicy'
+    Type: AWS::SNS::TopicPolicy
     Properties:
       PolicyDocument:
-        Version: 2012-10-17
+        Version: '2012-10-17'
         Statement:
           - Sid: CloudTrailPublish
-            Action: 'SNS:Publish'
+            Action: SNS:Publish
             Effect: Allow
             Principal:
               Service: cloudtrail.amazonaws.com
@@ -165,7 +320,7 @@ Resources:
         - !Ref LaceworkCWSTopic
   LaceworkCWSTrail:
     Condition: CreateNewTrail
-    Type: 'AWS::CloudTrail::Trail'
+    Type: AWS::CloudTrail::Trail
     DependsOn:
       - LaceworkCWSTopicPolicy
       - LaceworkCWSBucketPolicy
@@ -178,92 +333,87 @@ Resources:
       S3KeyPrefix: !If
         - NewTrailUsesLogFilePrefix
         - !Ref NewTrailLogFilePrefix
-        - !Ref 'AWS::NoValue'
-      SnsTopicName: !GetAtt
-        - LaceworkCWSTopic
-        - TopicName
+        - !Ref AWS::NoValue
+      SnsTopicName: !GetAtt LaceworkCWSTopic.TopicName
       EnableLogFileValidation: true
       IncludeGlobalServiceEvents: true
       IsMultiRegionTrail: true
       IsLogging: true
+      KMSKeyId: !GetAtt LaceworkKmsKey.Arn
   LaceworkCWSQueue:
-    Type: 'AWS::SQS::Queue'
+    Type: AWS::SQS::Queue
     Properties:
       QueueName: !Join
         - ''
         - - !Ref ResourceNamePrefix
           - '-laceworkcws'
   LaceworkCWSQueuePolicy:
-    Type: 'AWS::SQS::QueuePolicy'
+    Type: AWS::SQS::QueuePolicy
     Properties:
       PolicyDocument:
-        Version: 2012-10-17
+        Version: '2012-10-17'
         Statement:
           - Sid: AwsSnsAccess
             Effect: Allow
             Principal: '*'
             Action:
-              - 'sqs:SendMessage'
+              - sqs:SendMessage
             Resource: '*'
             Condition:
               ArnEquals:
-                'aws:SourceArn': !If
+                aws:SourceArn: !If
                   - CreateNewTrail
                   - !Ref LaceworkCWSTopic
                   - !Ref ExistingTrailTopicArn
       Queues:
         - !Ref LaceworkCWSQueue
   LaceworkCWSSubscription:
-    Type: 'AWS::SNS::Subscription'
+    Type: AWS::SNS::Subscription
     Properties:
-      Endpoint: !GetAtt
-        - LaceworkCWSQueue
-        - Arn
+      Endpoint: !GetAtt LaceworkCWSQueue.Arn
       Protocol: sqs
       TopicArn: !If
         - CreateNewTrail
         - !Ref LaceworkCWSTopic
         - !Ref ExistingTrailTopicArn
   LaceworkCWSSACrossAccountAccessRole:
-    Type: 'AWS::IAM::Role'
+    Type: AWS::IAM::Role
     Properties:
       RoleName: !Join
         - ''
         - - !Ref ResourceNamePrefix
           - '-laceworkcwssarole'
       AssumeRolePolicyDocument:
-        Version: 2012-10-17
+        Version: '2012-10-17'
         Statement:
-          - Action: 'sts:AssumeRole'
+          - Action: sts:AssumeRole
             Effect: Allow
             Principal:
-              AWS: ["434813966438"]
+              AWS: arn:aws:iam::434813966438:role/lacework-platform
             Condition:
               StringEquals:
-                'sts:ExternalId': !Ref ExternalID
+                sts:ExternalId: !Ref ExternalID
       ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/SecurityAudit'
+        - arn:aws:iam::aws:policy/SecurityAudit
   LaceworkCWSPolicy:
-    Type: 'AWS::IAM::Policy'
+    Type: AWS::IAM::Policy
     Properties:
       PolicyName: LaceworkCWSPolicy
       PolicyDocument:
-        Version: 2012-10-17
+        Version: '2012-10-17'
         Statement:
           - Sid: ConsumeNotifications
             Action:
-              - 'sqs:GetQueueAttributes'
-              - 'sqs:GetQueueUrl'
-              - 'sqs:DeleteMessage'
-              - 'sqs:ReceiveMessage'
+              - sqs:GetQueueAttributes
+              - sqs:GetQueueUrl
+              - sqs:DeleteMessage
+              - sqs:ReceiveMessage
             Effect: Allow
             Resource:
-              - !GetAtt
-                - LaceworkCWSQueue
-                - Arn
+              - !GetAtt LaceworkCWSQueue.Arn
           - Sid: ListLogFiles
             Action:
-              - 's3:ListBucket'
+              - s3:ListBucket
             Effect: Allow
             Resource:
               - !Join
@@ -276,11 +426,11 @@ Resources:
                   - /*AWSLogs/
             Condition:
               StringLike:
-                's3:prefix':
+                s3:prefix:
                   - '*AWSLogs/'
           - Sid: ReadLogFiles
             Action:
-              - 's3:Get*'
+              - s3:Get*
             Effect: Allow
             Resource:
               - !Join
@@ -293,62 +443,148 @@ Resources:
                   - /*AWSLogs/*
           - Sid: GetAccountAlias
             Action:
-              - 'iam:ListAccountAliases'
+              - iam:ListAccountAliases
             Effect: Allow
             Resource: '*'
           - Sid: Debug
             Action:
-              - 'cloudtrail:DescribeTrails'
-              - 'cloudtrail:GetTrailTopics'
-              - 'cloudtrail:GetTrailStatus'
-              - 'cloudtrail:ListPublicKeys'
-              - 'ec2:GetEbsEncryptionByDefault'
-              - 's3:GetBucketAcl'
-              - 's3:GetBucketPolicy'
-              - 's3:ListAllMyBuckets'
-              - 's3:GetBucketLocation'
-              - 's3:GetBucketLogging'
-              - 'sns:GetSubscriptionAttributes'
-              - 'sns:GetTopicAttributes'
-              - 'sns:ListSubscriptions'
-              - 'sns:ListSubscriptionsByTopic'
-              - 'sns:ListTopics'
+              - cloudtrail:DescribeTrails
+              - cloudtrail:GetTrailStatus
+              - eks:ListTagsForResource
+              - s3:GetBucketPolicy
+              - s3:GetBucketLocation
+              - sns:GetTopicAttributes
+              - sns:ListSubscriptions
+              - sns:ListTopics
+            Effect: Allow
+            Resource: '*'
+          - Sid: EfsPolicies
+            Action:
+              - elasticfilesystem:DescribeFileSystemPolicy
+              - elasticfilesystem:DescribeFileSystems
+              - elasticfilesystem:DescribeLifecycleConfiguration
+              - elasticfilesystem:DescribeAccessPoints
+              - elasticfilesystem:DescribeAccountPreferences
+              - elasticfilesystem:DescribeBackupPolicy
+              - elasticfilesystem:DescribeReplicationConfigurations
+            Effect: Allow
+            Resource: '*'
+          - Sid: SagemakerPolicies
+            Action:
+              - sagemaker:GetLineageGroupPolicy
+              - sagemaker:GetModelPackageGroupPolicy
+            Effect: Allow
+            Resource: '*'
+          - Sid: IdentityStoreReadOnly
+            Action:
+              - identitystore:DescribeGroup
+              - identitystore:DescribeGroupMembership
+              - identitystore:DescribeUser
+              - identitystore:ListGroupMemberships
+              - identitystore:ListGroupMembershipsForMember
+              - identitystore:ListGroups
+              - identitystore:ListUsers
+            Effect: Allow
+            Resource: '*'
+          - Sid: SSOReadOnly
+            Action:
+              - sso:DescribeAccountAssignmentDeletionStatus
+              - sso:DescribeInstanceAccessControlAttributeConfiguration
+              - sso:GetInlinePolicyForPermissionSet
+            Effect: Allow
+            Resource: '*'
+          - Sid: APIGATEWAY
+            Action:
+              - apigateway:GET
+            Effect: Allow
+            Resource: '*'
+          - Sid: APIGATEWAYV2
+            Action:
+              - apigatewayv2:GET
+            Effect: Allow
+            Resource: '*'
+          - Sid: SNS
+            Action:
+              - sns:GetDataProtectionPolicy
+              - sns:ListPlatformApplications
+              - sns:GetSubscriptionAttributes
+            Effect: Allow
+            Resource: '*'
+          - Sid: GLUE
+            Action:
+              - glue:ListWorkflows
+              - glue:BatchGetWorkflows
+              - glue:GetTags
+              - glue:GetTables
+              - glue:GetTable
+            Effect: Allow
+            Resource: '*'
+          - Sid: GLACIER
+            Action:
+              - glacier:ListTagsForVault
+            Effect: Allow
+            Resource: '*'
+          - Sid: CODEBUILD
+            Action:
+              - codebuild:ListBuilds
+              - codebuild:BatchGetBuilds
+            Effect: Allow
+            Resource: '*'
+          - Sid: WAFREGIONAL
+            Action:
+              - waf-regional:ListRules
+              - waf-regional:GetRule
+              - waf-regional:ListRuleGroups
+              - waf-regional:GetRuleGroup
+              - waf-regional:ListActivatedRulesInRuleGroup
+            Effect: Allow
+            Resource: '*'
+          - Sid: NETWORKFIREWALL
+            Effect: Allow
+            Action:
+              - network-firewall:DescribeLoggingConfiguration
+            Resource: '*'
+          - Sid: WAFV2
+            Effect: Allow
+            Action:
+              - wafv2:ListWebACLs
+              - wafv2:ListRegexPatternSets
+              - wafv2:ListIPSets
+            Resource:
+              - '*'
+          - Sid: STATES
+            Action:
+              - states:ListTagsForResource
             Effect: Allow
             Resource: '*'
       Roles:
         - !Ref LaceworkCWSSACrossAccountAccessRole
-  LaceworkSnsCustomResource:
-    Type: 'Custom::LaceworkSnsCustomResource'
-    DependsOn:
-      - LaceworkCWSPolicy
-      - LaceworkCWSSACrossAccountAccessRole
-      - LaceworkCWSQueuePolicy
-      - LaceworkCWSQueue
-    Properties:
-      Type: AWS_CT_CFG
-      ServiceToken: !Join
-        - ''
-        - - 'arn:aws:sns:'
-          - !Ref 'AWS::Region'
-          - ':434813966438:prodn-customer-cloudformation'
-      IntegrationName: !Ref 'AWS::StackName'
-      RoleArn: !GetAtt
-        - LaceworkCWSSACrossAccountAccessRole
-        - Arn
-      ExternalId: !Ref ExternalID
-      SqsQueueUrl: !Ref LaceworkCWSQueue
-      ApiToken: "{{resolve:ssm:ACCESS_TOKEN}}"
-      Account: !Ref ResourceNamePrefix
-      TemplateVersion: '1.1'
-      AWSAccountId: !Ref 'AWS::AccountId'
+#  LaceworkSnsCustomResource:
+#    Type: Custom::LaceworkSnsCustomResource
+#    DependsOn:
+#      - LaceworkCWSPolicy
+#      - LaceworkCWSSACrossAccountAccessRole
+#      - LaceworkCWSQueuePolicy
+#      - LaceworkCWSQueue
+#    Properties:
+#      Type: AWS_CT_CFG
+#      ServiceToken: !Join
+#        - ''
+#        - - 'arn:aws:sns:'
+#          - !Ref AWS::Region
+#          - ':434813966438:prodn-customer-cloudformation'
+#      IntegrationName: !Ref AWS::StackName
+#      RoleArn: !GetAtt LaceworkCWSSACrossAccountAccessRole.Arn
+#      ExternalId: !Ref ExternalID
+#      SqsQueueUrl: !Ref LaceworkCWSQueue
+#      ApiToken: !Ref ApiToken
+#      Account: !Ref ResourceNamePrefix
+#      TemplateVersion: '1.1'
+#      AWSAccountId: !Ref AWS::AccountId
 Outputs:
   RoleARN:
-    Description: >-
-      Cross-account access role ARN to share with Lacework for CloudTrail
-      integration
-    Value: !GetAtt
-      - LaceworkCWSSACrossAccountAccessRole
-      - Arn
+    Description: Cross-account access role ARN to share with Lacework for CloudTrail integration
+    Value: !GetAtt LaceworkCWSSACrossAccountAccessRole.Arn
   ExternalID:
     Description: ExternalID to share with Lacework for CloudTrail integration
     Value: !Ref ExternalID

@@ -11,7 +11,7 @@ SCRIPTS_PREFIX := scripts
 CFT_PREFIX := templates
 CFT_DIR := templates
 
-PROFILE ?= default
+PROFILE ?= alliances-admin
 REGION ?= us-west-2
 
 BUCKET_NAME ?= service_not_defined
@@ -39,6 +39,7 @@ $(s3_buckets):
 	@$(MAKE) _upload_scripts BUCKET_NAME=$@
 	@$(MAKE) _upload_lambda_zip BUCKET_NAME=$@
 	@$(MAKE) _upload_app_zip BUCKET_NAME=$@
+	@$(MAKE) _upload_lambda_layer BUCKET_NAME=$@
 
 _upload_templates:
 	$(info [+] Uploading templates to $(BUCKET_NAME) bucket)
@@ -57,6 +58,10 @@ _upload_app_zip:
 	(cd app && zip -r app.zip . -x "*.DS_Store*" "*.git*" "build*" "Makefile" "requirements.txt" "node_modules/*")
 	@aws --profile $(PROFILE) --region $(REGION) s3 cp app/app.zip s3://$(BUCKET_NAME)/$(KEY_PREFIX)/$(APP_PREFIX) --acl public-read
 	rm -f app/app.zip
+
+_upload_lambda_layer:
+	@zip -r9 pythonlayer.zip python
+	@aws s3 cp pythonlayer.zip s3://$(BUCKET_NAME)/$(KEY_PREFIX)/layer/pythonlayer.zip --profile $(PROFILE) --acl public-read
 
 _upload_lambda_zip: $(ZIP_LAMBDA_SUBDIRS)
 

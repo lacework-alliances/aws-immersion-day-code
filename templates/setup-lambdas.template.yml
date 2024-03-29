@@ -36,27 +36,30 @@ Parameters:
     Description: "S3 key prefix for assets directory. Use this if you want to customize your deployment. The prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slashes (/). For more information, see https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html."
 
 Resources:
-  RansomwareBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub "${AWS::AccountId}-ransomware-bucket-${LaceworkAccountName}"
-      VersioningConfiguration:
-        Status: Suspended
-
   AppBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${AWS::AccountId}-app-bucket-${LaceworkAccountName}"
+      BucketName: !Join
+        - '-'
+        - - !Ref AWS::AccountId
+          - 'immers-app-bucket'
+          - !Ref LaceworkAccountName
       VersioningConfiguration:
         Status: Enabled
 
   LambdaZipsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${AWS::AccountId}-immers-lambda-bucket-${LaceworkAccountName}"
+      BucketName: !Join
+        - '-'
+        - - !Ref AWS::AccountId
+          - 'immers-lambda-bucket'
+          - !Ref LaceworkAccountName
+          - !Join ['',['lw',!Select [ 0, !Split [ '-', !Select [ 2, !Split [ '/', !Ref AWS::StackId ] ] ] ] ] ]
 
   CopyLambdaZips:
     Type: Custom::CopyLambdaZips
+    DeletionPolicy: Retain
     Properties:
       ServiceToken: !GetAtt 'CopyZipsFunction.Arn'
       DestBucket: !Ref 'LambdaZipsBucket'
@@ -66,17 +69,6 @@ Resources:
       Objects:
         - '/lambda/resources.zip'
         - '/lambda/resourceseks.zip'
-
-  CopyRansomwareZips:
-    Type: Custom::CopyRansomwareZips
-    Properties:
-      ServiceToken: !GetAtt 'CopyZipsFunction.Arn'
-      DestBucket: !Ref 'RansomwareBucket'
-      SourceBucket: !Ref 'S3BucketName'
-      Prefix: !Ref 'S3KeyPrefix'
-      Acl: 'bucket-owner-full-control'
-      Objects:
-        - '/app/app.zip'
 
   CopyAppZips:
     Type: Custom::CopyAppZips
@@ -121,7 +113,6 @@ Resources:
                   - s3:PutObjectAcl
                 Resource:
                   - !Sub 'arn:${AWS::Partition}:s3:::${LambdaZipsBucket}/${S3KeyPrefix}*'
-                  - !Sub 'arn:${AWS::Partition}:s3:::${RansomwareBucket}/${S3KeyPrefix}*'
                   - !Sub 'arn:${AWS::Partition}:s3:::${AppBucket}/${S3KeyPrefix}*'
 
   CopyZipsFunction:
@@ -129,7 +120,7 @@ Resources:
     Properties:
       Description: Copies objects from the S3 bucket to a new location.
       Handler: index.handler
-      Runtime: python3.7
+      Runtime: python3.9
       Role: !GetAtt 'CopyZipsRole.Arn'
       Timeout: 240
       Code:
@@ -193,17 +184,14 @@ Resources:
         S3Bucket: !Ref LambdaZipsBucket
         S3Key: !Join ['', [!Ref 'S3KeyPrefix', '/lambda/resources.zip']]
       Handler: resources.lambda_handler
-      Runtime: python3.7
+      Runtime: python3.9
       Timeout: 900
       Environment:
         Variables:
           artifact_bucket: !Sub "${AWS::AccountId}-immers-artifact-bucket-${LaceworkAccountName}"
           lacework_bucket: !Sub "${AWS::AccountId}-laceworkcws-${LaceworkAccountName}"
-          code_guru_bucket: !Sub "codeguru-reviewer-cli-${AWS::AccountId}-${AWS::Region}"
           lambda_bucket: !Ref LambdaZipsBucket
-          ransomware_bucket: !Ref RansomwareBucket
           app_bucket: !Ref AppBucket
-          eks_audit_bucket: !Sub "${AWS::AccountId}-laceworkeks-${LaceworkAccountName}"
           staging_ecr_repo: "staging-demo-app"
           prod_ecr_repo: "prod-demo-app"
       Role: !GetAtt ResourcesFunctionRole.Arn
@@ -217,7 +205,7 @@ Resources:
         S3Bucket: !Ref LambdaZipsBucket
         S3Key: !Join ['', [!Ref 'S3KeyPrefix', '/lambda/resourceseks.zip']]
       Handler: resourceseks.lambda_handler
-      Runtime: python3.7
+      Runtime: python3.9
       Timeout: 900
       Environment:
         Variables:
@@ -338,8 +326,6 @@ Resources:
 ####### Outputs
 
 Outputs:
-  RansomwareBucket:
-    Value: !Ref RansomwareBucket
   LambdaZipsBucket:
     Value: !Ref LambdaZipsBucket
   AppBucket:

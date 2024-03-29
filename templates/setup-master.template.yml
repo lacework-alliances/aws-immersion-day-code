@@ -35,14 +35,14 @@ Parameters:
     AllowedPattern: '^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$'
     ConstraintDescription: Invalid Lacework account name. Account name may contain alphanumeric characters and dashes only.
   LaceworkAccessKeyID:
-    Default: LACEWORK_11AE3CDA28BFB04B32A9660D13C1E0CC2EBBBE39FF1A8C3
+    Default: LACEWORK_3D15B9C7D377D801B322D59B6FCE477EFF112614935692C
     Type: String
     MinLength: '1'
     AllowedPattern: '^[a-zA-Z0-9_]*$'
     ConstraintDescription: Lacework API Access Key ID contains alphanumeric characters and symbols only.
     Description: Lacework API Secret Key ID. See https://support.lacework.com/hc/en-us/articles/360011403853-Generate-API-Access-Keys-and-Tokens
   LaceworkSecretKey:
-    Default: _ba389304be405ffb9275ea273abcce76
+    Default: _8de411c2961612486aed6ef09fec79fd
     Type: String
     NoEcho: true
     MinLength: '1'
@@ -98,19 +98,20 @@ Resources:
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-lacework.template.yml
       Parameters:
         ResourceNamePrefix: !Ref LaceworkAccountName
-        ExternalID: !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]
+        ExternalID: !Join [':',[!Sub "lweid:aws:v2:${LaceworkAccountName}:${AWS::AccountId}", !Join ['',["LW",!Select [ 0, !Split [ '-', !Select [ 2, !Split [ '/', !Ref AWS::StackId ] ] ] ]]]]]
         CreateTrail: "Yes"
+        ApiToken: '{{resolve:ssm:ACCESS_TOKEN}}'
 
-  LaceworkEKSAudit:
+  LaceworkEKS:
     Type: AWS::CloudFormation::Stack
     DependsOn:
       - BastionEks
     Properties:
       TemplateURL: >-
-        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-lacework-eks-audit.template.yml
+        https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-eks-audit-log.template.yml
       Parameters:
         ResourceNamePrefix: !Ref LaceworkAccountName
-        ExternalID: !Select [ 4, !Split [ '-', !Select [ 2, !Split [ '/', !Ref AWS::StackId ] ] ] ]
+        ExternalID: !Join [ ':',[ !Sub "lweid:aws:v2:${LaceworkAccountName}:${AWS::AccountId}", !Join [ '',[ "LW",!Select [ 0, !Split [ '-', !Select [ 2, !Split [ '/', !Ref AWS::StackId ] ] ] ] ] ] ] ]
 
   Pipelines:
     Type: AWS::CloudFormation::Stack
@@ -136,10 +137,261 @@ Resources:
         S3BucketName: !Ref S3BucketName
         S3KeyPrefix: !Ref S3KeyPrefix
 
+  LambdaLayerBucket:
+    Type: AWS::S3::Bucket
 
+  CopyZips:
+    Type: Custom::CopyZips
+    Properties:
+      ServiceToken: !GetAtt 'CopyZipsFunction.Arn'
+      DestBucket: !Ref 'LambdaLayerBucket'
+      SourceBucket: lacework-alliances
+      Prefix: awsimmersionday
+      Objects:
+        - /layer/pythonlayer.zip
 
+  CopyZipsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Path: /
+      Policies:
+        - PolicyName: lambda-copier
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectTagging
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::lacework-alliances/awsimmersionday*'
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:PutObjectTagging
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${LambdaLayerBucket}/awsimmersionday*'
 
+  CopyZipsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Copies objects from the S3 bucket to a new location.
+      Handler: index.handler
+      Runtime: python3.9
+      Role: !GetAtt 'CopyZipsRole.Arn'
+      Timeout: 240
+      Code:
+        ZipFile: |
+          import json
+          import logging
+          import threading
+          import boto3
+          import cfnresponse
 
+          logging.getLogger().setLevel(logging.INFO)
 
+          def copy_objects(source_bucket, dest_bucket, prefix, objects):
+              s3 = boto3.client('s3')
+              for o in objects:
+                  key = prefix + o
+                  copy_source = {
+                      'Bucket': source_bucket,
+                      'Key': key
+                  }
+                  print('copy_source: %s' % copy_source)
+                  print('dest_bucket = %s'%dest_bucket)
+                  print('key = %s' %key)
+                  s3.copy_object(CopySource=copy_source, Bucket=dest_bucket,
+                        Key=key)
+          def delete_objects(bucket, prefix, objects):
+              s3 = boto3.client('s3')
+              objects = {'Objects': [{'Key': prefix + o} for o in objects]}
+              s3.delete_objects(Bucket=bucket, Delete=objects)
+          def timeout(event, context):
+              logging.error('Execution is about to time out, sending failure response to CloudFormation')
+              cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)
+          def handler(event, context):
+              # make sure we send a failure to CloudFormation if the function
+              # is going to timeout
+              timer = threading.Timer((context.get_remaining_time_in_millis()
+                        / 1000.00) - 0.5, timeout, args=[event, context])
+              timer.start()
+              print('Received event: %s' % json.dumps(event))
+              status = cfnresponse.SUCCESS
+              try:
+                  source_bucket = event['ResourceProperties']['SourceBucket']
+                  dest_bucket = event['ResourceProperties']['DestBucket']
+                  prefix = event['ResourceProperties']['Prefix']
+                  objects = event['ResourceProperties']['Objects']
+                  if event['RequestType'] == 'Delete':
+                      delete_objects(dest_bucket, prefix, objects)
+                  else:
+                      copy_objects(source_bucket, dest_bucket, prefix, objects)
+              except Exception as e:
+                  logging.error('Exception: %s' % e, exc_info=True)
+                  status = cfnresponse.FAILED
+              finally:
+                  timer.cancel()
+                  cfnresponse.send(event, context, status, {}, None)
+  LambdaPythonLayer:
+    Type: AWS::Lambda::LayerVersion
+    DependsOn:
+      - CopyZips
+    Properties:
+      LayerName: LambdaPythonLayer
+      Description: Modules that are required for the Lambda function to work
+      Content:
+        S3Bucket: !Ref LambdaLayerBucket
+        S3Key: awsimmersionday/layer/pythonlayer.zip
+      CompatibleRuntimes:
+        - python3.11
 
+  LaceworkCreateAccountsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Layers:
+        - !Ref LambdaPythonLayer
+      Handler: index.handler
+      Runtime: python3.11
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import requests
+          import cfnresponse
+          import os
+          import logging
+          import boto3
+          import json
+          from laceworksdk import LaceworkClient
 
+          logging.getLogger().setLevel(logging.INFO)
+
+          def handler(event, context):
+              logging.info('Received event: %s', event)
+              request_type = event['RequestType']
+              if request_type == 'Delete':
+                  try:
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  except Exception as e:
+                    logging.error('Exception: %s' % e, exc_info=True)
+                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              elif request_type == 'Create':
+                  lw_account_name = os.environ['lw_account_name']
+                  lw_api_key = os.environ['lw_api_key']
+                  lw_api_secret = os.environ['lw_api_secret']
+                  lw_cross_account_role = os.environ['lw_cross_account_role']
+                  lw_sqs_url = os.environ['lw_sqs_url']
+                  lw_eks_cross_account_role = os.environ['lw_eks_cross_account_role']
+                  lw_eks_bucket_arn = os.environ['lw_eks_bucket_arn']
+                  lw_eks_sns_topic_arn = os.environ['lw_eks_sns_topic_arn']
+                  aws_account_id = context.invoked_function_arn.split(':')[4]
+                  external_id = os.environ['external_id']
+
+                  responseData = {}
+                  try:
+                      lacework_client = LaceworkClient(account=lw_account_name,
+                        api_key=lw_api_key,
+                        api_secret=lw_api_secret)
+
+                      responseData["AwsCfg"]=lacework_client.cloud_accounts.create(aws_account_id+"-AwsCfg-"+lw_account_name,"AwsCfg", True,
+                        {
+                          "awsAccountId": aws_account_id,
+                          "crossAccountCredentials": {
+                                "roleArn": lw_cross_account_role,
+                                "externalId": external_id
+                            }
+                        })
+
+                      responseData["AwsCtSqs"]=lacework_client.cloud_accounts.create(aws_account_id+"-AwsCtSqs-"+lw_account_name,"AwsCtSqs", True,
+                        {
+                          "awsAccountId": aws_account_id,
+                          "crossAccountCredentials": {
+                                "roleArn": lw_cross_account_role,
+                                "externalId": external_id
+                            },
+                          "queueUrl": lw_sqs_url
+                        })
+
+                      responseData["AwsEksAudit"]=lacework_client.cloud_accounts.create(aws_account_id+"-AwsEksAudit-"+lw_account_name,"AwsEksAudit",True,
+                        {
+                          "awsAccountId": aws_account_id,
+                          "crossAccountCredentials": {
+                                "roleArn": lw_eks_cross_account_role,
+                                "externalId": external_id
+                            },
+                          "snsArn": lw_eks_sns_topic_arn,
+                          "s3BucketArn": lw_eks_bucket_arn
+                        })
+
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+                  except Exception as e:
+                    logging.error('Exception: %s' % e, exc_info=True)
+                    cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+      Environment:
+        Variables:
+          lw_account_name: !Ref LaceworkAccountName
+          lw_api_key: !Ref LaceworkAccessKeyID
+          lw_api_secret: !Ref LaceworkSecretKey
+          lw_cross_account_role: !GetAtt Lacework.Outputs.RoleARN
+          lw_sqs_url: !GetAtt Lacework.Outputs.SQSQueueURL
+          lw_eks_cross_account_role: !GetAtt LaceworkEKS.Outputs.RoleARN
+          lw_eks_bucket_arn: !GetAtt LaceworkEKS.Outputs.S3BucketArn
+          lw_eks_sns_topic_arn: !GetAtt LaceworkEKS.Outputs.SNSTopicArn
+          external_id: !Join [ ':',[ !Sub "lweid:aws:v2:${LaceworkAccountName}:${AWS::AccountId}", !Join [ '',[ "LW",!Select [ 0, !Split [ '-', !Select [ 2, !Split [ '/', !Ref AWS::StackId ] ] ] ] ] ] ] ]
+      Role: !GetAtt LaceworkCreateAccountsFunctionRole.Arn
+
+  LaceworkCreateAccountsFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: CreateAccountsInLacework
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: CloudwatchLogging
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*:*"
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+
+  LaceworkCreateAccountsFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !GetAtt LaceworkCreateAccountsFunction.Arn
+      Principal: events.amazonaws.com
+
+  LaceworkCreateAccountsFunctionExecute:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn:
+      - Lacework
+      - LaceworkEKS
+    Properties:
+      ServiceToken:
+        !GetAtt LaceworkCreateAccountsFunction.Arn
