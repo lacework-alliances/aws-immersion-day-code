@@ -67,6 +67,14 @@ Parameters:
     Description: "S3 key prefix for assets directory. Use this if you want to customize your deployment. The prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slashes (/). For more information, see https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html."
 
 Resources:
+  AccessTokenParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: ACCESS_TOKEN
+      Type: String
+      Value: 'abc'
+      Description: Lacework Access Token
+
   BaseVpc:
     Type: AWS::CloudFormation::Stack
     Properties:
@@ -77,6 +85,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     DependsOn:
       - BaseVpc
+      - AccessTokenParam
     Properties:
       TemplateURL: >-
         https://lacework-alliances.s3.us-west-2.amazonaws.com/awsimmersionday/templates/setup-bastion-eks.template.yml
@@ -100,7 +109,7 @@ Resources:
         ResourceNamePrefix: !Ref LaceworkAccountName
         ExternalID: !Join [':',[!Sub "lweid:aws:v2:${LaceworkAccountName}:${AWS::AccountId}", !Join ['',["LW",!Select [ 0, !Split [ '-', !Select [ 2, !Split [ '/', !Ref AWS::StackId ] ] ] ]]]]]
         CreateTrail: "Yes"
-        ApiToken: '{{resolve:ssm:ACCESS_TOKEN}}'
+        ApiToken: !GetAtt AccessTokenParam.Value
 
   LaceworkEKS:
     Type: AWS::CloudFormation::Stack
